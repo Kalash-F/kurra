@@ -147,4 +147,4 @@ This project is licensed under the MIT License.
 If you use this project in your own work, please provide appropriate credit.
 
 For commercial use, you are encouraged to reach out for collaboration or licensing opportunities.
-Email : [EMAIL_ADDRESS]
+Email : Kalashkharel@outlook.com
