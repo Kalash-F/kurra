@@ -119,7 +119,7 @@ function IntroCard({
 
         <TouchableOpacity
           style={[styles.audioButton, { backgroundColor: colors.primary + '15' }]}
-          onPress={() => speak(phrase.devanagari)}
+          onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })}
           activeOpacity={0.7}
         >
           <Text style={{ fontSize: 24 }}>🔊</Text>
@@ -163,7 +163,7 @@ function ListenCard({ phrase, onNext }: { phrase: Phrase; onNext: () => void }) 
         <TouchableOpacity
           style={[styles.bigAudioBtn, { backgroundColor: colors.primary }]}
           onPress={() => {
-            speak(phrase.devanagari);
+            speak(phrase.devanagari, { audioFile: phrase.audioFile });
             setHasListened(true);
           }}
           activeOpacity={0.7}
@@ -323,7 +323,7 @@ function AudioMatchCard({
 
         <TouchableOpacity
           style={[styles.bigAudioBtn, { backgroundColor: colors.secondary }]}
-          onPress={() => speak(phrase.devanagari)}
+          onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })}
           activeOpacity={0.7}
         >
           <Text style={{ fontSize: 40 }}>🔊</Text>
@@ -409,7 +409,7 @@ function RecapCard({
             <TouchableOpacity
               key={phrase.id}
               style={styles.recapRow}
-              onPress={() => speak(phrase.devanagari)}
+              onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })}
               activeOpacity={0.7}
             >
               <View style={{ flex: 1 }}>

@@ -12,6 +12,7 @@ interface UserProfile {
   goals: LearningGoal[];
   showRomanized: boolean;
   audioSpeed: 'slow' | 'normal';
+  voicePreference: 'female' | 'male';
   name?: string;
 }
 
@@ -29,6 +30,7 @@ const defaultProfile: UserProfile = {
   goals: [],
   showRomanized: true,
   audioSpeed: 'normal',
+  voicePreference: 'female',
 };
 
 const UserContext = createContext<UserContextType>({

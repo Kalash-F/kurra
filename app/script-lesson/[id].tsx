@@ -96,7 +96,7 @@ function TeachCard({ item, onNext }: { item: ScriptItem; onNext: () => void }) {
       <Card variant="elevated" padding="large" style={styles.teachCard}>
         <TouchableOpacity
           style={[styles.charDisplay, { backgroundColor: colors.scriptCharBg, borderColor: colors.scriptCharBorder }]}
-          onPress={() => speak(item.character)}
+          onPress={() => speak(item.character, { audioFile: item.audioFile })}
           activeOpacity={0.7}
         >
           <Text
@@ -113,16 +113,28 @@ function TeachCard({ item, onNext }: { item: ScriptItem; onNext: () => void }) {
           {item.transliteration}
         </Text>
 
-        <TouchableOpacity
-          style={[styles.audioBtn, { backgroundColor: colors.primary + '15' }]}
-          onPress={() => speak(item.character)}
-          activeOpacity={0.7}
-        >
-          <Text style={{ fontSize: 20 }}>🔊</Text>
-          <Text style={[Typography.captionBold, { color: colors.primary, marginLeft: Spacing.sm }]}>
-            Listen
-          </Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: Spacing.md, marginTop: Spacing.lg }}>
+          <TouchableOpacity
+            style={[styles.audioBtn, { backgroundColor: colors.primary + '15', marginTop: 0 }]}
+            onPress={() => speak(item.character, { audioFile: item.audioFile, rate: 1.0 })}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 20 }}>🔊</Text>
+            <Text style={[Typography.captionBold, { color: colors.primary, marginLeft: Spacing.sm }]}>
+              Normal
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.audioBtn, { backgroundColor: colors.secondary + '15', marginTop: 0 }]}
+            onPress={() => speak(item.character, { audioFile: item.audioFile, rate: 0.5 })}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 20 }}>🐢</Text>
+            <Text style={[Typography.captionBold, { color: colors.secondary, marginLeft: Spacing.sm }]}>
+              Slow
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {item.example && (
           <View style={[styles.exampleBox, { backgroundColor: colors.surfaceElevated }]}>
@@ -191,7 +203,7 @@ function RecogniseCard({
       <View style={styles.centerContent}>
         <TouchableOpacity
           style={[styles.charDisplay, { backgroundColor: colors.scriptCharBg, borderColor: colors.scriptCharBorder }]}
-          onPress={() => speak(item.character)}
+          onPress={() => speak(item.character, { audioFile: item.audioFile })}
           activeOpacity={0.7}
         >
           <Text
@@ -204,9 +216,28 @@ function RecogniseCard({
           </Text>
         </TouchableOpacity>
 
-        <Text style={[Typography.caption, { color: colors.primary, marginTop: Spacing.sm, marginBottom: Spacing.xxl }]}>
-          🔊 Tap to hear
-        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: Spacing.md, marginTop: Spacing.md, marginBottom: Spacing.xl }}>
+          <TouchableOpacity
+            style={[styles.listenHint, { backgroundColor: colors.primary + '15', marginTop: 0, marginBottom: 0 }]}
+            onPress={() => speak(item.character, { audioFile: item.audioFile, rate: 1.0 })}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 18 }}>🔊</Text>
+            <Text style={[Typography.caption, { color: colors.primary, marginLeft: Spacing.xs }]}>
+              Normal
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.listenHint, { backgroundColor: colors.secondary + '15', marginTop: 0, marginBottom: 0 }]}
+            onPress={() => speak(item.character, { audioFile: item.audioFile, rate: 0.5 })}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 18 }}>🐢</Text>
+            <Text style={[Typography.caption, { color: colors.secondary, marginLeft: Spacing.xs }]}>
+              Slow
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.optionsList}>
           {options.map((option, idx) => {
@@ -292,16 +323,28 @@ function RecallCharCard({
           Which one is "{item.transliteration}"?
         </Text>
 
-        <TouchableOpacity
-          style={[styles.listenHint, { backgroundColor: colors.secondary + '15' }]}
-          onPress={() => speak(item.character)}
-          activeOpacity={0.7}
-        >
-          <Text style={{ fontSize: 18 }}>🔊</Text>
-          <Text style={[Typography.caption, { color: colors.secondary, marginLeft: Spacing.xs }]}>
-            Listen
-          </Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: Spacing.md, marginTop: Spacing.md, marginBottom: Spacing.xxl }}>
+          <TouchableOpacity
+            style={[styles.listenHint, { backgroundColor: colors.primary + '15', marginTop: 0, marginBottom: 0 }]}
+            onPress={() => speak(item.character, { audioFile: item.audioFile, rate: 1.0 })}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 18 }}>🔊</Text>
+            <Text style={[Typography.caption, { color: colors.primary, marginLeft: Spacing.xs }]}>
+              Normal
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.listenHint, { backgroundColor: colors.secondary + '15', marginTop: 0, marginBottom: 0 }]}
+            onPress={() => speak(item.character, { audioFile: item.audioFile, rate: 0.5 })}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 18 }}>🐢</Text>
+            <Text style={[Typography.caption, { color: colors.secondary, marginLeft: Spacing.xs }]}>
+              Slow
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.charGrid}>
           {options.map((option, idx) => {
@@ -398,7 +441,7 @@ function ScriptRecap({
               <TouchableOpacity
                 key={idx}
                 style={[styles.recapCharBox, { backgroundColor: colors.scriptCharBg, borderColor: colors.scriptCharBorder }]}
-                onPress={() => speak(item.character)}
+                onPress={() => speak(item.character, { audioFile: item.audioFile })}
                 activeOpacity={0.7}
               >
                 <Text style={[Typography.devanagariSmall, { color: colors.devanagari }]}>

@@ -24,6 +24,7 @@ interface ReviewItem {
   answer: string;
   devanagari?: string;
   options: string[];
+  audioFile?: string;
 }
 
 function buildReviewItems(
@@ -43,6 +44,7 @@ function buildReviewItems(
           answer: phrase.romanized,
           devanagari: phrase.devanagari,
           options: generateOptions(phrase.romanized, unit.phrases.map(p => p.romanized)),
+          audioFile: phrase.audioFile,
         });
       });
     }
@@ -62,6 +64,7 @@ function buildReviewItems(
               item.transliteration,
               unit.items.map(i => i.transliteration)
             ),
+            audioFile: item.audioFile,
           });
         });
       }
@@ -193,7 +196,7 @@ export default function ReviewScreen() {
           </Text>
 
           {current.type === 'script' ? (
-            <TouchableOpacity onPress={() => speak(current.devanagari || current.answer)}>
+            <TouchableOpacity onPress={() => speak(current.devanagari || current.answer, { audioFile: current.audioFile })}>
               <Text style={[Typography.devanagariLarge, { color: colors.devanagari, textAlign: 'center' }]}>
                 {current.question}
               </Text>
