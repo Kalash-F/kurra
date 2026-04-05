@@ -406,7 +406,7 @@ function ScriptRecap({ items, score, total, missedCount, onFinish }: { items: Sc
 export default function ScriptLessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { completeScriptLesson, updateItemMastery, updateStreak } = useProgress();
+  const { progress, completeScriptLesson, updateItemMastery, updateStreak } = useProgress();
   const { correctFeedback, incorrectFeedback } = useFeedback();
 
   const unit = scriptUnits.find((u) => u.id === id);
@@ -418,7 +418,33 @@ export default function ScriptLessonScreen() {
     );
   }
 
-  const initialExercises = useMemo(() => buildExercises(unit.items), [unit.id]);
+  const lessonProgress = progress.scriptLessons[unit.id];
+  const completedIds = lessonProgress?.completedItems || [];
+  const sessionItemsRef = useRef<ScriptItem[]>([]);
+
+  const initialExercises = useMemo(() => {
+    const uncompletedItems = unit.items.filter(item => !completedIds.includes(`${unit.id}-${item.transliteration}`));
+    const sessionItems = uncompletedItems.length > 0 ? uncompletedItems.slice(0, 4) : [...unit.items].sort(() => Math.random() - 0.5).slice(0, 4);
+    sessionItemsRef.current = sessionItems;
+
+    let exs = buildExercises(sessionItems);
+
+    const completedItemsData = unit.items.filter(item => completedIds.includes(`${unit.id}-${item.transliteration}`));
+    if (completedItemsData.length > 0 && uncompletedItems.length > 0) {
+      const shuffled = [...completedItemsData].sort(() => Math.random() - 0.5).slice(0, 2);
+      const allSounds = unit.items.map((i) => i.transliteration);
+      const prepends = shuffled.map(item => ({
+        type: 'microReview' as ExerciseType,
+        item,
+        questionType: 'charToSound' as const,
+        options: shuffleOptions(item.transliteration, allSounds),
+        correctAnswer: item.transliteration,
+        label: '⚡ QUICK REFRESHER'
+      }));
+      exs = [...prepends, ...exs];
+    }
+    return exs;
+  }, [unit.id, completedIds.length]);
 
   const [exercises, setExercises] = useState<Exercise[]>(initialExercises);
   const [currentStep, setCurrentStep] = useState(0);
@@ -489,8 +515,9 @@ export default function ScriptLessonScreen() {
   };
 
   const handleFinish = async () => {
-    const pct = totalAnswered > 0 ? Math.round((score / totalAnswered) * 100) : 100;
-    await completeScriptLesson(unit.id, pct);
+    const newlyCompletedIds = sessionItemsRef.current.map(item => `${unit.id}-${item.transliteration}`);
+    const isComplete = completedIds.length + sessionItemsRef.current.length >= unit.items.length;
+    await completeScriptLesson(unit.id, newlyCompletedIds, isComplete);
     await updateStreak();
     router.back();
   };

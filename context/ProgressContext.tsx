@@ -6,6 +6,7 @@ interface LessonProgress {
   score: number; // 0-100
   attempts: number;
   lastAttempt?: string;
+  completedItems: string[];
 }
 
 interface ItemMastery {
@@ -37,8 +38,8 @@ type MasteryLevel = 'new' | 'learning' | 'familiar' | 'mastered';
 interface ProgressContextType {
   progress: ProgressData;
   isLoading: boolean;
-  completeSpeakingLesson: (unitId: string, score: number) => Promise<void>;
-  completeScriptLesson: (unitId: string, score: number) => Promise<void>;
+  completeSpeakingLesson: (unitId: string, completedIds: string[], isUnitComplete: boolean) => Promise<void>;
+  completeScriptLesson: (unitId: string, completedIds: string[], isUnitComplete: boolean) => Promise<void>;
   updateItemMastery: (itemId: string, correct: boolean) => Promise<void>;
   getWeakItems: () => string[];
   getReviewDue: () => string[];
@@ -105,26 +106,32 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem('progressData', JSON.stringify(data));
   }, []);
 
-  const completeSpeakingLesson = useCallback(async (unitId: string, score: number) => {
+  const completeSpeakingLesson = useCallback(async (unitId: string, completedIds: string[], isUnitComplete: boolean) => {
     const newProgress = { ...progress };
-    const existing = newProgress.speakingLessons[unitId];
+    const existing = newProgress.speakingLessons[unitId] || { completed: false, score: 0, attempts: 0, completedItems: [] };
+    const mergedItems = Array.from(new Set([...(existing.completedItems || []), ...completedIds]));
+
     newProgress.speakingLessons[unitId] = {
-      completed: true,
-      score: existing ? Math.max(existing.score, score) : score,
-      attempts: (existing?.attempts || 0) + 1,
+      completed: existing.completed || isUnitComplete,
+      score: isUnitComplete ? 100 : existing.score,
+      attempts: existing.attempts + 1,
       lastAttempt: new Date().toISOString(),
+      completedItems: mergedItems,
     };
     await save(newProgress);
   }, [progress, save]);
 
-  const completeScriptLesson = useCallback(async (unitId: string, score: number) => {
+  const completeScriptLesson = useCallback(async (unitId: string, completedIds: string[], isUnitComplete: boolean) => {
     const newProgress = { ...progress };
-    const existing = newProgress.scriptLessons[unitId];
+    const existing = newProgress.scriptLessons[unitId] || { completed: false, score: 0, attempts: 0, completedItems: [] };
+    const mergedItems = Array.from(new Set([...(existing.completedItems || []), ...completedIds]));
+
     newProgress.scriptLessons[unitId] = {
-      completed: true,
-      score: existing ? Math.max(existing.score, score) : score,
-      attempts: (existing?.attempts || 0) + 1,
+      completed: existing.completed || isUnitComplete,
+      score: isUnitComplete ? 100 : existing.score,
+      attempts: existing.attempts + 1,
       lastAttempt: new Date().toISOString(),
+      completedItems: mergedItems,
     };
     await save(newProgress);
   }, [progress, save]);

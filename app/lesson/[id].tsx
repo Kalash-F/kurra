@@ -584,7 +584,7 @@ export default function LessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const { profile } = useUser();
-  const { completeSpeakingLesson, updateItemMastery, updateStreak } = useProgress();
+  const { progress, completeSpeakingLesson, updateItemMastery, updateStreak } = useProgress();
   const { correctFeedback, incorrectFeedback } = useFeedback();
 
   const unit = speakingUnits.find((u) => u.id === id);
@@ -597,7 +597,31 @@ export default function LessonScreen() {
   }
 
   const showScript = profile.path === 'speaking_script';
-  const initialExercises = useMemo(() => buildExercises(unit.phrases), [unit.id]);
+  const lessonProgress = progress.speakingLessons[unit.id];
+  const completedIds = lessonProgress?.completedItems || [];
+  const sessionPhrasesRef = useRef<Phrase[]>([]);
+
+  const initialExercises = useMemo(() => {
+    const uncompletedPhrases = unit.phrases.filter(p => !completedIds.includes(p.id));
+    const sessionPhrases = uncompletedPhrases.length > 0 ? uncompletedPhrases.slice(0, 3) : [...unit.phrases].sort(() => Math.random() - 0.5).slice(0, 3);
+    sessionPhrasesRef.current = sessionPhrases;
+
+    let exs = buildExercises(sessionPhrases);
+
+    const completedPhrasesData = unit.phrases.filter(p => completedIds.includes(p.id));
+    if (completedPhrasesData.length > 0 && uncompletedPhrases.length > 0) {
+      const shuffled = [...completedPhrasesData].sort(() => Math.random() - 0.5).slice(0, 2);
+      const allRomanized = unit.phrases.map((p) => p.romanized);
+      const prepends = shuffled.map(phrase => ({
+        type: 'microReview' as ExerciseType,
+        phrase,
+        options: shuffleOptions(phrase.romanized, allRomanized),
+        correctAnswer: phrase.romanized,
+      }));
+      exs = [...prepends, ...exs];
+    }
+    return exs;
+  }, [unit.id, completedIds.length]);
 
   const [exercises, setExercises] = useState<Exercise[]>(initialExercises);
   const [currentStep, setCurrentStep] = useState(0);
@@ -619,7 +643,7 @@ export default function LessonScreen() {
     setHasListened(false);
   }, [currentStep]);
 
-  const progress = ((currentStep + 1) / exercises.length) * 100;
+  const progressPct = ((currentStep + 1) / exercises.length) * 100;
   const current = exercises[currentStep];
   const currentPhraseRef = useRef(current.phrase.id);
   currentPhraseRef.current = current.phrase.id;
@@ -673,8 +697,9 @@ export default function LessonScreen() {
   };
 
   const handleFinish = async () => {
-    const pct = totalAnswered > 0 ? Math.round((score / totalAnswered) * 100) : 100;
-    await completeSpeakingLesson(unit.id, pct);
+    const newlyCompletedIds = sessionPhrasesRef.current.map(p => p.id);
+    const isComplete = completedIds.length + sessionPhrasesRef.current.length >= unit.phrases.length;
+    await completeSpeakingLesson(unit.id, newlyCompletedIds, isComplete);
     await updateStreak();
     router.back();
   };
@@ -693,7 +718,7 @@ export default function LessonScreen() {
           <Text style={[Typography.h4, { color: colors.textSecondary }]}>✕</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, marginHorizontal: Spacing.md }}>
-          <ProgressBar progress={progress} height={6} />
+          <ProgressBar progress={progressPct} height={6} />
         </View>
         <Text style={[Typography.caption, { color: colors.textSecondary }]}>
           {currentStep + 1}/{exercises.length}
