@@ -1,6 +1,7 @@
 export interface ScriptItem {
   character: string;
   transliteration: string;
+  phonetic?: string;
   type: 'vowel' | 'consonant' | 'matra' | 'syllable' | 'word' | 'phrase';
   example?: string;
   exampleMeaning?: string;
@@ -221,14 +222,14 @@ export const scriptUnits: ScriptUnit[] = [
     color: '#8E44AD',
     goal: 'Sound out syllables built from familiar consonants + matras',
     items: [
-      { character: 'मा', transliteration: 'maa', type: 'syllable', audioFile: 'syl_maa' },
-      { character: 'ना', transliteration: 'naa', type: 'syllable', audioFile: 'syl_naa' },
-      { character: 'रा', transliteration: 'raa', type: 'syllable', audioFile: 'syl_raa' },
-      { character: 'बा', transliteration: 'baa', type: 'syllable', audioFile: 'syl_baa' },
-      { character: 'की', transliteration: 'kee', type: 'syllable', audioFile: 'syl_kee' },
-      { character: 'नी', transliteration: 'nee', type: 'syllable', audioFile: 'syl_nee' },
-      { character: 'पु', transliteration: 'pu', type: 'syllable', audioFile: 'syl_pu' },
-      { character: 'रे', transliteration: 're', type: 'syllable', audioFile: 'syl_re' },
+      { character: 'मा', transliteration: 'maa', type: 'syllable', phonetic: 'mah', audioFile: 'syl_maa' },
+      { character: 'ना', transliteration: 'naa', type: 'syllable', phonetic: 'nah', audioFile: 'syl_naa' },
+      { character: 'रा', transliteration: 'raa', type: 'syllable', phonetic: 'rah', audioFile: 'syl_raa' },
+      { character: 'बा', transliteration: 'baa', type: 'syllable', phonetic: 'bah', audioFile: 'syl_baa' },
+      { character: 'की', transliteration: 'kee', type: 'syllable', phonetic: 'kee', audioFile: 'syl_kee' },
+      { character: 'नी', transliteration: 'nee', type: 'syllable', phonetic: 'nee', audioFile: 'syl_nee' },
+      { character: 'पु', transliteration: 'pu', type: 'syllable', phonetic: 'poo', audioFile: 'syl_pu' },
+      { character: 'रे', transliteration: 're', type: 'syllable', phonetic: 'ray', audioFile: 'syl_re' },
     ],
   },
 
@@ -242,11 +243,11 @@ export const scriptUnits: ScriptUnit[] = [
     color: '#E8733A',
     goal: 'Read your first short words in Devanagari',
     items: [
-      { character: 'म', transliteration: 'ma', type: 'word', exampleMeaning: 'I / me', audioFile: 'word_ma' },
-      { character: 'घर', transliteration: 'ghar', type: 'word', exampleMeaning: 'house', audioFile: 'word_ghar' },
-      { character: 'बाबा', transliteration: 'baabaa', type: 'word', exampleMeaning: 'father / dad', audioFile: 'word_baabaa' },
-      { character: 'ममी', transliteration: 'mamee', type: 'word', exampleMeaning: 'mummy', audioFile: 'word_mamee' },
-      { character: 'मा', transliteration: 'maa', type: 'word', exampleMeaning: 'mother (informal)', audioFile: 'word_maa' },
+      { character: 'म', transliteration: 'ma', type: 'word', phonetic: 'muh', exampleMeaning: 'I / me', audioFile: 'word_ma' },
+      { character: 'घर', transliteration: 'ghar', type: 'word', phonetic: 'ghuhr', exampleMeaning: 'house', audioFile: 'word_ghar' },
+      { character: 'बाबा', transliteration: 'baabaa', type: 'word', phonetic: 'bah-bah', exampleMeaning: 'father / dad', audioFile: 'word_baabaa' },
+      { character: 'ममी', transliteration: 'mamee', type: 'word', phonetic: 'muh-mee', exampleMeaning: 'mummy', audioFile: 'word_mamee' },
+      { character: 'मा', transliteration: 'maa', type: 'word', phonetic: 'mah', exampleMeaning: 'mother (informal)', audioFile: 'word_maa' },
     ],
   },
   {
@@ -258,12 +259,12 @@ export const scriptUnits: ScriptUnit[] = [
     color: '#2A9D8F',
     goal: 'Read everyday Nepali words',
     items: [
-      { character: 'पानी', transliteration: 'paanee', type: 'word', exampleMeaning: 'water', audioFile: 'word_paanee' },
-      { character: 'खाना', transliteration: 'khaanaa', type: 'word', exampleMeaning: 'food', audioFile: 'word_khaanaa' },
-      { character: 'राम्रो', transliteration: 'raamro', type: 'word', exampleMeaning: 'good / nice', audioFile: 'word_raamro' },
-      { character: 'साथी', transliteration: 'saathee', type: 'word', exampleMeaning: 'friend', audioFile: 'word_saathee' },
-      { character: 'आमा', transliteration: 'aama', type: 'word', exampleMeaning: 'mother', audioFile: 'word_aama' },
-      { character: 'बुवा', transliteration: 'buwa', type: 'word', exampleMeaning: 'father', audioFile: 'word_buwa' },
+      { character: 'पानी', transliteration: 'paanee', type: 'word', phonetic: 'pah-nee', exampleMeaning: 'water', audioFile: 'word_paanee' },
+      { character: 'खाना', transliteration: 'khaanaa', type: 'word', phonetic: 'khah-nah', exampleMeaning: 'food', audioFile: 'word_khaanaa' },
+      { character: 'राम्रो', transliteration: 'raamro', type: 'word', phonetic: 'rahm-ro', exampleMeaning: 'good / nice', audioFile: 'word_raamro' },
+      { character: 'साथी', transliteration: 'saathee', type: 'word', phonetic: 'sah-thee', exampleMeaning: 'friend', audioFile: 'word_saathee' },
+      { character: 'आमा', transliteration: 'aama', type: 'word', phonetic: 'ah-mah', exampleMeaning: 'mother', audioFile: 'word_aama' },
+      { character: 'बुवा', transliteration: 'buwa', type: 'word', phonetic: 'boo-wah', exampleMeaning: 'father', audioFile: 'word_buwa' },
     ],
   },
   {
@@ -275,11 +276,11 @@ export const scriptUnits: ScriptUnit[] = [
     color: '#E9C46A',
     goal: 'Connect spoken words you already know to their written form',
     items: [
-      { character: 'नमस्ते', transliteration: 'namaste', type: 'word', exampleMeaning: 'hello', audioFile: 'word_namaste' },
-      { character: 'धन्यवाद', transliteration: 'dhanyabaad', type: 'word', exampleMeaning: 'thank you', audioFile: 'word_dhanyabaad' },
-      { character: 'हजुर', transliteration: 'hajur', type: 'word', exampleMeaning: 'yes / excuse me', audioFile: 'word_hajur' },
-      { character: 'होइन', transliteration: 'hoina', type: 'word', exampleMeaning: 'no', audioFile: 'word_hoina' },
-      { character: 'ठीक छ', transliteration: 'thik chha', type: 'word', exampleMeaning: 'okay', audioFile: 'word_thikchhha' },
+      { character: 'नमस्ते', transliteration: 'namaste', type: 'word', phonetic: 'nuh-muh-stay', exampleMeaning: 'hello', audioFile: 'word_namaste' },
+      { character: 'धन्यवाद', transliteration: 'dhanyabaad', type: 'word', phonetic: 'dhun-yuh-bahd', exampleMeaning: 'thank you', audioFile: 'word_dhanyabaad' },
+      { character: 'हजुर', transliteration: 'hajur', type: 'word', phonetic: 'huh-joor', exampleMeaning: 'yes / excuse me', audioFile: 'word_hajur' },
+      { character: 'होइन', transliteration: 'hoina', type: 'word', phonetic: 'hoy-nuh', exampleMeaning: 'no', audioFile: 'word_hoina' },
+      { character: 'ठीक छ', transliteration: 'thik chha', type: 'word', phonetic: 'theek-chuh', exampleMeaning: 'okay', audioFile: 'word_thikchhha' },
     ],
   },
 
@@ -293,11 +294,11 @@ export const scriptUnits: ScriptUnit[] = [
     color: '#C0392B',
     goal: 'Read your first complete Nepali phrases',
     items: [
-      { character: 'नमस्ते', transliteration: 'namaste', type: 'phrase', exampleMeaning: 'Hello', audioFile: 'phrase_namaste' },
-      { character: 'म ठीक छु', transliteration: 'ma thik chhu', type: 'phrase', exampleMeaning: 'I am fine', audioFile: 'phrase_ma_thik_chhu' },
-      { character: 'मलाई पानी चाहिन्छ', transliteration: 'malai paani chahinchha', type: 'phrase', exampleMeaning: 'I need water', audioFile: 'phrase_malai_paani' },
-      { character: 'म घर जान्छु', transliteration: 'ma ghar jaanchhu', type: 'phrase', exampleMeaning: 'I go home', audioFile: 'phrase_ma_ghar' },
-      { character: 'धन्यवाद', transliteration: 'dhanyabaad', type: 'phrase', exampleMeaning: 'Thank you', audioFile: 'phrase_dhanyabaad' },
+      { character: 'नमस्ते', transliteration: 'namaste', type: 'phrase', phonetic: 'nuh-muh-stay', exampleMeaning: 'Hello', audioFile: 'phrase_namaste' },
+      { character: 'म ठीक छु', transliteration: 'ma thik chhu', type: 'phrase', phonetic: 'muh theek chhu', exampleMeaning: 'I am fine', audioFile: 'phrase_ma_thik_chhu' },
+      { character: 'मलाई पानी चाहिन्छ', transliteration: 'malai paani chahinchha', type: 'phrase', phonetic: 'muh-lie pah-nee chah-hin-chuh', exampleMeaning: 'I need water', audioFile: 'phrase_malai_paani' },
+      { character: 'म घर जान्छु', transliteration: 'ma ghar jaanchhu', type: 'phrase', phonetic: 'muh ghuhr jahn-chhoo', exampleMeaning: 'I go home', audioFile: 'phrase_ma_ghar' },
+      { character: 'धन्यवाद', transliteration: 'dhanyabaad', type: 'phrase', phonetic: 'dhun-yuh-bahd', exampleMeaning: 'Thank you', audioFile: 'phrase_dhanyabaad' },
     ],
   },
 ];

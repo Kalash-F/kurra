@@ -8,7 +8,7 @@ from google.genai import types
 
 # Load environment variables from .env file
 load_dotenv()
-
+print("loaded env")
 # Map of phrases: { "filename": "nepali text" }
 # For blanks like ___, they are removed so it reads naturally "mero naam ... ho".
 phrases_map = {
@@ -277,44 +277,63 @@ def pcm_to_wav(pcm_data):
     wav_buffer.seek(0)
     return wav_buffer.getvalue()
 
-def synthesize_audio(text, output_path, client, voice_name):
+def synthesize_audio(text, output_path, client, voice_name, max_retries=3):
     """Generate audio for text using Gemini TTS, wrap PCM into WAV, and save."""
     tts_prompt = f"Say exactly: {text}"
-    try:
-        # Rate limit: 10 requests per minute
-        time.sleep(6.1)
-        tts_response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-tts",
-            contents=tts_prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name=voice_name
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Rate limit: 10 requests per minute
+            time.sleep(6.1)
+            tts_response = client.models.generate_content(
+                model="gemini-2.5-flash-preview-tts",
+                contents=tts_prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=voice_name
+                            )
                         )
-                    )
+                    ),
                 ),
-            ),
-        )
+            )
 
-        # Extract raw PCM audio data from response
-        pcm_data = None
-        for part in tts_response.candidates[0].content.parts:
-            if part.inline_data:
-                pcm_data = part.inline_data.data
-                break
+            # Null-safety: check response has valid candidates
+            if (not tts_response.candidates
+                    or tts_response.candidates[0] is None
+                    or tts_response.candidates[0].content is None
+                    or not tts_response.candidates[0].content.parts):
+                print(f"  Attempt {attempt}/{max_retries}: Empty response for '{text}', retrying...")
+                time.sleep(3 * attempt)  # increasing backoff
+                continue
 
-        if pcm_data:
-            # Wrap raw PCM into a proper WAV file
-            wav_data = pcm_to_wav(pcm_data)
-            with open(output_path, "wb") as f:
-                f.write(wav_data)
-            print(f'WAV written: "{output_path}" ({len(wav_data)} bytes)')
-        else:
-            print(f"Warning: No audio data returned for '{text}'")
-    except Exception as e:
-        print(f"Error synthesizing '{text}' with {voice_name}: {e}")
+            # Extract raw PCM audio data from response
+            pcm_data = None
+            for part in tts_response.candidates[0].content.parts:
+                if part.inline_data:
+                    pcm_data = part.inline_data.data
+                    break
+
+            if pcm_data:
+                # Wrap raw PCM into a proper WAV file
+                wav_data = pcm_to_wav(pcm_data)
+                with open(output_path, "wb") as f:
+                    f.write(wav_data)
+                print(f'WAV written: "{output_path}" ({len(wav_data)} bytes)')
+                return  # success
+            else:
+                print(f"  Attempt {attempt}/{max_retries}: No audio data in response for '{text}', retrying...")
+                time.sleep(3 * attempt)
+                continue
+
+        except Exception as e:
+            print(f"  Attempt {attempt}/{max_retries} error for '{text}': {e}")
+            if attempt < max_retries:
+                time.sleep(3 * attempt)
+            continue
+
+    print(f"FAILED after {max_retries} attempts: '{text}' — will retry on next run")
 
 def main():
     api_key = os.environ.get("GOOGLE_API_KEY")
@@ -342,13 +361,19 @@ def main():
         for filename, text in phrases_map.items():
             out_path = os.path.join(phrases_dir, f"{filename}.wav")
             if not os.path.exists(out_path):
+                print(f"-> Starting synthesis for {filename}.wav (waiting on API rate limit...)")
                 synthesize_audio(text, out_path, client, voice_name)
+            else:
+                print(f"Skipping {filename}.wav (already exists)")
 
         print(f"\nGenerating script audio for {voice_type} ({voice_name})...")
         for filename, text in script_map.items():
             out_path = os.path.join(script_dir, f"{filename}.wav")
             if not os.path.exists(out_path):
+                print(f"-> Starting synthesis for {filename}.wav (waiting on API rate limit...)")
                 synthesize_audio(text, out_path, client, voice_name)
+            else:
+                print(f"Skipping {filename}.wav (already exists)")
 
     print("\nAll audio generated successfully!")
 

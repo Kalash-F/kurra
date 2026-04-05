@@ -106,9 +106,14 @@ function IntroCard({
         </Text>
 
         {showRomanized && (
-          <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center', marginBottom: Spacing.md }]}>
-            {phrase.romanized}
-          </Text>
+          <View style={{ marginBottom: Spacing.md }}>
+            <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center' }]}>
+              {phrase.romanized}
+            </Text>
+            <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', fontStyle: 'italic', marginTop: Spacing.xs }]}>
+              {phrase.phonetic}
+            </Text>
+          </View>
         )}
 
         {showScript && (
@@ -415,6 +420,9 @@ function RecapCard({
               <View style={{ flex: 1 }}>
                 <Text style={[Typography.caption, { color: colors.text }]}>{phrase.english}</Text>
                 <Text style={[Typography.small, { color: colors.romanized }]}>{phrase.romanized}</Text>
+                <Text style={[Typography.small, { color: colors.textTertiary, fontStyle: 'italic' }]}>
+                  {phrase.phonetic}
+                </Text>
               </View>
               <Text style={{ fontSize: 16 }}>🔊</Text>
             </TouchableOpacity>

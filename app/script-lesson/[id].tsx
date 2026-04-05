@@ -109,9 +109,16 @@ function TeachCard({ item, onNext }: { item: ScriptItem; onNext: () => void }) {
           </Text>
         </TouchableOpacity>
 
-        <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center', marginTop: Spacing.lg }]}>
-          {item.transliteration}
-        </Text>
+        <View style={{ marginTop: Spacing.lg }}>
+          <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center' }]}>
+            {item.transliteration}
+          </Text>
+          {item.phonetic && (
+            <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', fontStyle: 'italic', marginTop: Spacing.xs }]}>
+              {item.phonetic}
+            </Text>
+          )}
+        </View>
 
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: Spacing.md, marginTop: Spacing.lg }}>
           <TouchableOpacity
@@ -450,6 +457,11 @@ function ScriptRecap({
                 <Text style={[Typography.small, { color: colors.romanized }]}>
                   {item.transliteration}
                 </Text>
+                {item.phonetic && (
+                  <Text style={[Typography.small, { color: colors.textTertiary, fontStyle: 'italic' }]}>
+                    {item.phonetic}
+                  </Text>
+                )}
               </TouchableOpacity>
             ))}
           </View>
