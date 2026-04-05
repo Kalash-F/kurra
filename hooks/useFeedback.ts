@@ -11,7 +11,7 @@ export function useFeedback() {
   }, []);
 
   const incorrectFeedback = useCallback(() => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, []);
 
   const tapFeedback = useCallback(() => {

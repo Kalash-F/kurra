@@ -1,14 +1,16 @@
 import React from 'react';
 import {
-  TouchableOpacity,
+  Pressable,
   Text,
   StyleSheet,
   ViewStyle,
   TextStyle,
   ActivityIndicator,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useTheme } from '@/context/ThemeContext';
 import { BorderRadius, Spacing, Typography } from '@/constants/Typography';
+import { usePressAnimation } from '@/src/hooks/usePressAnimation';
 
 interface ButtonProps {
   title: string;
@@ -36,6 +38,7 @@ export function Button({
   fullWidth = false,
 }: ButtonProps) {
   const { colors } = useTheme();
+  const { animatedStyle, onPressIn, onPressOut } = usePressAnimation();
 
   const getButtonStyle = (): ViewStyle => {
     const base: ViewStyle = {
@@ -89,20 +92,23 @@ export function Button({
   };
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      disabled={disabled || loading}
-      style={[getButtonStyle(), style]}
-      activeOpacity={0.7}
-    >
-      {loading ? (
-        <ActivityIndicator color={variant === 'primary' || variant === 'secondary' ? '#FFF' : colors.primary} />
-      ) : (
-        <>
-          {icon}
-          <Text style={[getTextStyle(), textStyle]}>{title}</Text>
-        </>
-      )}
-    </TouchableOpacity>
+    <Animated.View style={[animatedStyle, style]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={disabled || loading ? undefined : onPressIn}
+        onPressOut={disabled || loading ? undefined : onPressOut}
+        disabled={disabled || loading}
+        style={getButtonStyle()}
+      >
+        {loading ? (
+          <ActivityIndicator color={variant === 'primary' || variant === 'secondary' ? '#FFF' : colors.primary} />
+        ) : (
+          <>
+            {icon}
+            <Text style={[getTextStyle(), textStyle]}>{title}</Text>
+          </>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }

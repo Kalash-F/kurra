@@ -6,12 +6,13 @@ import {
   Dimensions,
   FlatList,
   TouchableOpacity,
-  Animated,
   StatusBar,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { router } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { useUser, LearningPath, ExperienceLevel, LearningGoal } from '@/context/UserContext';
+import { useEntryAnimation } from '@/src/hooks/useEntryAnimation';
 import { Button } from '@/components/ui/Button';
 import { Spacing, BorderRadius, Typography } from '@/constants/Typography';
 
@@ -19,9 +20,11 @@ const { width, height } = Dimensions.get('window');
 
 function WelcomeStep({ onNext }: { onNext: () => void }) {
   const { colors } = useTheme();
+  const animatedStyle = useEntryAnimation(100);
+  
   return (
     <View style={[styles.step, { backgroundColor: colors.background }]}>
-      <View style={styles.welcomeContent}>
+      <Animated.View style={[styles.welcomeContent, animatedStyle]}>
         <Text style={[styles.welcomeEmoji]}>🙏</Text>
         <Text style={[Typography.h1, { color: colors.primary, textAlign: 'center', marginBottom: Spacing.sm }]}>
           Kurra
@@ -33,7 +36,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           Build confidence speaking Nepali with practical lessons, cultural context, and optional script learning.
         </Text>
         <Button title="Get Started" onPress={onNext} size="large" fullWidth />
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -41,10 +44,11 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
 function PathStep({ onSelect }: { onSelect: (path: LearningPath) => void }) {
   const { colors } = useTheme();
   const [selected, setSelected] = useState<LearningPath | null>(null);
+  const animatedStyle = useEntryAnimation(50);
 
   return (
     <View style={[styles.step, { backgroundColor: colors.background }]}>
-      <View style={styles.stepContent}>
+      <Animated.View style={[styles.stepContent, animatedStyle]}>
         <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.sm }]}>
           How do you want to learn?
         </Text>
@@ -110,10 +114,9 @@ function PathStep({ onSelect }: { onSelect: (path: LearningPath) => void }) {
               },
             ]}
           >
-            {selected === 'speaking_script' && <View style={styles.radioInner} />}
           </View>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
       <View style={styles.bottomAction}>
         <Button
@@ -131,10 +134,11 @@ function PathStep({ onSelect }: { onSelect: (path: LearningPath) => void }) {
 function ExperienceStep({ onSelect }: { onSelect: (exp: ExperienceLevel) => void }) {
   const { colors } = useTheme();
   const [selected, setSelected] = useState<ExperienceLevel | null>(null);
+  const animatedStyle = useEntryAnimation(50);
 
   return (
     <View style={[styles.step, { backgroundColor: colors.background }]}>
-      <View style={styles.stepContent}>
+      <Animated.View style={[styles.stepContent, animatedStyle]}>
         <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.sm }]}>
           What's your level?
         </Text>
@@ -181,7 +185,7 @@ function ExperienceStep({ onSelect }: { onSelect: (exp: ExperienceLevel) => void
             </Text>
           </View>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
       <View style={styles.bottomAction}>
         <Button
@@ -213,9 +217,11 @@ function GoalStep({ onSelect }: { onSelect: (goals: LearningGoal[]) => void }) {
     { id: 'culture', emoji: '🎭', label: 'Understand the culture' },
   ];
 
+  const animatedStyle = useEntryAnimation(50);
+
   return (
     <View style={[styles.step, { backgroundColor: colors.background }]}>
-      <View style={styles.stepContent}>
+      <Animated.View style={[styles.stepContent, animatedStyle]}>
         <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.sm }]}>
           What's your goal?
         </Text>
@@ -243,7 +249,7 @@ function GoalStep({ onSelect }: { onSelect: (goals: LearningGoal[]) => void }) {
             )}
           </TouchableOpacity>
         ))}
-      </View>
+      </Animated.View>
 
       <View style={styles.bottomAction}>
         <Button

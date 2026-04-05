@@ -1,21 +1,34 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   SafeAreaView,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useTheme } from '@/context/ThemeContext';
 import { useProgress } from '@/context/ProgressContext';
 import { useUser } from '@/context/UserContext';
 import { useSpeech } from '@/hooks/useSpeech';
+import { useFeedbackEffects } from '@/src/hooks/useFeedbackEffects';
+import { useEntryAnimation } from '@/src/hooks/useEntryAnimation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { ParticleEffect } from '@/components/ui/ParticleEffect';
 import { speakingUnits } from '@/data/speakingUnits';
 import { scriptUnits } from '@/data/scriptUnits';
 import { Spacing, BorderRadius, Typography } from '@/constants/Typography';
+import { spring, interaction } from '@/src/design/motion';
+import { pickRandom, CORRECT_MESSAGES, INCORRECT_MESSAGES, getCompletionMessage, XP_AWARDS } from '@/src/design/cultural';
 
 interface ReviewItem {
   id: string;
@@ -80,11 +93,92 @@ function generateOptions(correct: string, pool: string[]): string[] {
   return options.length >= 2 ? options : [correct, 'option2', 'option3', 'option4'];
 }
 
+/* ──────────── Animated Option for Review ──────────── */
+
+function ReviewAnimatedOption({
+  option,
+  correctAnswer,
+  selected,
+  showResult,
+  onSelect,
+}: {
+  option: string;
+  correctAnswer: string;
+  selected: string | null;
+  showResult: boolean;
+  onSelect: (opt: string) => void;
+}) {
+  const { colors } = useTheme();
+  const scale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+
+  const isSelected = selected === option;
+  const isCorrect = option === correctAnswer;
+
+  useEffect(() => {
+    if (!showResult) {
+      scale.value = 1;
+      translateX.value = 0;
+      return;
+    }
+    if (isCorrect) {
+      scale.value = withSequence(
+        withSpring(interaction.correctPopScale, spring.pop),
+        withSpring(1, spring.release)
+      );
+    } else if (isSelected && !isCorrect) {
+      const d = interaction.shakeDistance;
+      translateX.value = withSequence(
+        withTiming(-d, { duration: 50 }),
+        withTiming(d, { duration: 50 }),
+        withTiming(-d / 2, { duration: 50 }),
+        withTiming(0, { duration: 50 })
+      );
+    }
+  }, [showResult]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: scale.value },
+      { translateX: translateX.value },
+    ],
+  }));
+
+  let bgColor = colors.surface;
+  let borderColor = colors.border;
+  if (showResult) {
+    if (isCorrect) { bgColor = colors.correctBg; borderColor = colors.correctBorder; }
+    else if (isSelected && !isCorrect) { bgColor = colors.incorrectBg; borderColor = colors.incorrectBorder; }
+  } else if (isSelected) {
+    bgColor = colors.primary + '15';
+    borderColor = colors.primary;
+  }
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        style={[styles.option, { backgroundColor: bgColor, borderColor }]}
+        onPress={() => onSelect(option)}
+        disabled={showResult}
+      >
+        <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
+        {showResult && isCorrect && (
+          <Text style={{ fontSize: 18, marginLeft: 'auto' }}>✓</Text>
+        )}
+        {showResult && isSelected && !isCorrect && (
+          <Text style={{ fontSize: 18, marginLeft: 'auto' }}>✗</Text>
+        )}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 export default function ReviewScreen() {
   const { colors } = useTheme();
-  const { progress, updateItemMastery, getWeakItems, getReviewDue } = useProgress();
+  const { progress, updateItemMastery, getWeakItems, getReviewDue, addXP } = useProgress();
   const { profile } = useUser();
   const { speak } = useSpeech();
+  const { onCorrect, onIncorrect, onComplete, onProgress } = useFeedbackEffects();
   const showScript = profile.path === 'speaking_script';
 
   const weakItems = getWeakItems();
@@ -182,21 +276,36 @@ export default function ReviewScreen() {
 
   if (currentIndex >= reviewItems.length) {
     const percentage = Math.round((score / answered) * 100);
+    const xpAward = XP_AWARDS.reviewSessionComplete;
+
+    // We reached the end. If we haven't given XP yet, do it once.
+    if (answered > 0 && !showResult) {
+      setTimeout(() => {
+        onComplete();
+        addXP(xpAward);
+        setShowResult(true); // hack: use this state to ensure we only do it once
+      }, 0);
+    }
+
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+        <ParticleEffect active={true} count={12} spread={120} />
         <View style={styles.emptyContainer}>
           <Text style={{ fontSize: 64, marginBottom: Spacing.xxl }}>
             {percentage >= 80 ? '🎉' : percentage >= 50 ? '👍' : '💪'}
           </Text>
           <Text style={[Typography.h2, { color: colors.text, textAlign: 'center', marginBottom: Spacing.md }]}>
-            Review Complete!
+            {getCompletionMessage(percentage)}
           </Text>
           <Text style={[Typography.h1, { color: colors.primary }]}>
             {percentage}%
           </Text>
-          <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
+          <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.sm, marginBottom: Spacing.md }]}>
             {score} of {answered} correct
           </Text>
+          <View style={[styles.noteBox, { backgroundColor: colors.accent + '20', borderColor: 'transparent', alignSelf: 'stretch', alignItems: 'center' }]}>
+             <Text style={[Typography.captionBold, { color: colors.accentDark }]}>+{xpAward} XP earned</Text>
+          </View>
           <Button
             title="Back to Review Menu"
             onPress={() => setIsSessionActive(false)}
@@ -217,11 +326,17 @@ export default function ReviewScreen() {
     setAnswered(answered + 1);
 
     const isCorrect = option === current.answer;
-    if (isCorrect) setScore(score + 1);
+    if (isCorrect) {
+      setScore(score + 1);
+      onCorrect();
+    } else {
+      onIncorrect();
+    }
     await updateItemMastery(current.id, isCorrect);
   };
 
   const handleNext = () => {
+    onProgress();
     setSelectedAnswer(null);
     setShowResult(false);
     setCurrentIndex(currentIndex + 1);
@@ -248,80 +363,59 @@ export default function ReviewScreen() {
             ]}
           />
         </View>
+        <Animated.View key={currentIndex} style={[{ flex: 1 }, useEntryAnimation(0)]}>
+          <View style={styles.questionArea}>
+            <Text style={[Typography.label, { color: colors.textTertiary, marginBottom: Spacing.md }]}>
+              {current.type === 'speaking' ? 'WHAT IS THIS IN NEPALI?' : 'WHAT SOUND IS THIS?'}
+            </Text>
 
-        <View style={styles.questionArea}>
-          <Text style={[Typography.label, { color: colors.textTertiary, marginBottom: Spacing.md }]}>
-            {current.type === 'speaking' ? 'WHAT IS THIS IN NEPALI?' : 'WHAT SOUND IS THIS?'}
-          </Text>
-
-          {current.type === 'script' ? (
-            <TouchableOpacity onPress={() => speak(current.devanagari || current.answer, { audioFile: current.audioFile })}>
-              <Text style={[Typography.devanagariLarge, { color: colors.devanagari, textAlign: 'center' }]}>
+            {current.type === 'script' ? (
+              <TouchableOpacity onPress={() => speak(current.devanagari || current.answer, { audioFile: current.audioFile })}>
+                <Text style={[Typography.devanagariLarge, { color: colors.devanagari, textAlign: 'center' }]}>
+                  {current.question}
+                </Text>
+                <Text style={[Typography.caption, { color: colors.primary, textAlign: 'center', marginTop: Spacing.sm }]}>
+                  🔊 Tap to hear
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={[Typography.h2, { color: colors.text, textAlign: 'center' }]}>
                 {current.question}
               </Text>
-              <Text style={[Typography.caption, { color: colors.primary, textAlign: 'center', marginTop: Spacing.sm }]}>
-                🔊 Tap to hear
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={[Typography.h2, { color: colors.text, textAlign: 'center' }]}>
-              {current.question}
-            </Text>
-          )}
-        </View>
-
-        <View style={styles.optionsArea}>
-          {current.options.map((option, idx) => {
-            const isSelected = selectedAnswer === option;
-            const isCorrect = option === current.answer;
-            let bgColor = colors.surface;
-            let borderColor = colors.border;
-
-            if (showResult) {
-              if (isCorrect) {
-                bgColor = colors.correctBg;
-                borderColor = colors.correctBorder;
-              } else if (isSelected && !isCorrect) {
-                bgColor = colors.incorrectBg;
-                borderColor = colors.incorrectBorder;
-              }
-            } else if (isSelected) {
-              bgColor = colors.primary + '15';
-              borderColor = colors.primary;
-            }
-
-            return (
-              <TouchableOpacity
-                key={idx}
-                style={[styles.option, { backgroundColor: bgColor, borderColor }]}
-                onPress={() => handleSelect(option)}
-                activeOpacity={0.7}
-                disabled={showResult}
-              >
-                <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
-                {showResult && isCorrect && (
-                  <Text style={{ fontSize: 18, marginLeft: 'auto' }}>✓</Text>
-                )}
-                {showResult && isSelected && !isCorrect && (
-                  <Text style={{ fontSize: 18, marginLeft: 'auto' }}>✗</Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {showResult && (
-          <View style={styles.resultArea}>
-            {selectedAnswer === current.answer ? (
-              <Text style={[Typography.bodyBold, { color: colors.success }]}>Correct! 🎉</Text>
-            ) : (
-              <Text style={[Typography.body, { color: colors.error }]}>
-                The answer was: {current.answer}
-              </Text>
             )}
-            <Button title="Next" onPress={handleNext} style={{ marginTop: Spacing.lg }} fullWidth />
           </View>
-        )}
+
+          <View style={styles.optionsArea}>
+            {current.options.map((option, idx) => (
+              <ReviewAnimatedOption
+                key={idx}
+                option={option}
+                correctAnswer={current.answer}
+                selected={selectedAnswer}
+                showResult={showResult}
+                onSelect={handleSelect}
+              />
+            ))}
+          </View>
+
+          {showResult && (
+            <View style={styles.resultArea}>
+              {selectedAnswer === current.answer ? (
+                <Text style={[Typography.bodyBold, { color: colors.success }]}>🎉 {pickRandom(CORRECT_MESSAGES)}</Text>
+              ) : (
+                <View>
+                  <Text style={[Typography.body, { color: colors.error }]}>
+                    {pickRandom(INCORRECT_MESSAGES)}
+                  </Text>
+                  <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
+                    The answer was: {current.answer}
+                  </Text>
+                </View>
+              )}
+              <Button title="Next" onPress={handleNext} style={{ marginTop: Spacing.lg }} fullWidth />
+            </View>
+          )}
+        </Animated.View>
       </View>
     </SafeAreaView>
   );
@@ -380,5 +474,11 @@ const styles = StyleSheet.create({
   resultArea: {
     alignItems: 'center',
     paddingBottom: Spacing.huge,
+  },
+  noteBox: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginTop: Spacing.md,
   },
 });

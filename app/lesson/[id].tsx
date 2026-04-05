@@ -4,20 +4,32 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   SafeAreaView,
   ScrollView,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { useProgress } from '@/context/ProgressContext';
 import { useSpeech } from '@/hooks/useSpeech';
-import { useFeedback } from '@/hooks/useFeedback';
+import { useFeedbackEffects } from '@/src/hooks/useFeedbackEffects';
+import { useEntryAnimation } from '@/src/hooks/useEntryAnimation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { ParticleEffect } from '@/components/ui/ParticleEffect';
 import { speakingUnits, Phrase } from '@/data/speakingUnits';
 import { Spacing, BorderRadius, Typography } from '@/constants/Typography';
+import { spring, interaction, duration } from '@/src/design/motion';
+import { pickRandom, CORRECT_MESSAGES, INCORRECT_MESSAGES, getCompletionMessage, XP_AWARDS } from '@/src/design/cultural';
 
 /* ────────────────────────── types ────────────────────────── */
 
@@ -153,6 +165,83 @@ function buildExercises(phrases: Phrase[]): Exercise[] {
  *
  * ═══════════════════════════════════════════════════════════════ */
 
+/* ──────────── Animated Option (individual) ──────────── */
+
+function AnimatedOption({
+  option,
+  correctAnswer,
+  selected,
+  showResult,
+  onSelect,
+}: {
+  option: string;
+  correctAnswer: string;
+  selected: string | null;
+  showResult: boolean;
+  onSelect: (opt: string) => void;
+}) {
+  const { colors } = useTheme();
+  const scale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+
+  const isSelected = selected === option;
+  const isCorrect = option === correctAnswer;
+
+  useEffect(() => {
+    if (!showResult) {
+      scale.value = 1;
+      translateX.value = 0;
+      return;
+    }
+    if (isCorrect) {
+      // Scale pop for correct answer
+      scale.value = withSequence(
+        withSpring(interaction.correctPopScale, spring.pop),
+        withSpring(1, spring.release)
+      );
+    } else if (isSelected && !isCorrect) {
+      // Horizontal shake for incorrect
+      const d = interaction.shakeDistance;
+      translateX.value = withSequence(
+        withTiming(-d, { duration: 50 }),
+        withTiming(d, { duration: 50 }),
+        withTiming(-d / 2, { duration: 50 }),
+        withTiming(0, { duration: 50 })
+      );
+    }
+  }, [showResult]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: scale.value },
+      { translateX: translateX.value },
+    ],
+  }));
+
+  let bg = colors.surface;
+  let border = colors.border;
+  if (showResult) {
+    if (isCorrect) { bg = colors.correctBg; border = colors.correctBorder; }
+    else if (isSelected && !isCorrect) { bg = colors.incorrectBg; border = colors.incorrectBorder; }
+  }
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Pressable
+        style={[styles.optionBtn, { backgroundColor: bg, borderColor: border }]}
+        onPress={() => onSelect(option)}
+        disabled={showResult}
+      >
+        <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
+        {showResult && isCorrect && <Text style={styles.optionMark}>✓</Text>}
+        {showResult && isSelected && !isCorrect && (
+          <Text style={[styles.optionMark, { color: colors.error }]}>✗</Text>
+        )}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 /* ──────────── Option list (shared renderer) ──────────── */
 
 function OptionList({
@@ -168,37 +257,18 @@ function OptionList({
   showResult: boolean;
   onSelect: (opt: string) => void;
 }) {
-  const { colors } = useTheme();
-
   return (
     <View style={styles.optionsList}>
-      {options.map((option, idx) => {
-        const isSelected = selected === option;
-        const isCorrect = option === correctAnswer;
-        let bg = colors.surface;
-        let border = colors.border;
-
-        if (showResult) {
-          if (isCorrect) { bg = colors.correctBg; border = colors.correctBorder; }
-          else if (isSelected && !isCorrect) { bg = colors.incorrectBg; border = colors.incorrectBorder; }
-        }
-
-        return (
-          <TouchableOpacity
-            key={idx}
-            style={[styles.optionBtn, { backgroundColor: bg, borderColor: border }]}
-            onPress={() => onSelect(option)}
-            activeOpacity={0.7}
-            disabled={showResult}
-          >
-            <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
-            {showResult && isCorrect && <Text style={styles.optionMark}>✓</Text>}
-            {showResult && isSelected && !isCorrect && (
-              <Text style={[styles.optionMark, { color: colors.error }]}>✗</Text>
-            )}
-          </TouchableOpacity>
-        );
-      })}
+      {options.map((option, idx) => (
+        <AnimatedOption
+          key={idx}
+          option={option}
+          correctAnswer={correctAnswer}
+          selected={selected}
+          showResult={showResult}
+          onSelect={onSelect}
+        />
+      ))}
     </View>
   );
 }
@@ -218,13 +288,21 @@ function ResultFooter({
 }) {
   const { colors } = useTheme();
   const isCorrect = selected === correctAnswer;
+  const message = isCorrect
+    ? (successText || pickRandom(CORRECT_MESSAGES))
+    : pickRandom(INCORRECT_MESSAGES);
 
   return (
     <View style={styles.bottomButton}>
       <View style={styles.resultFeedback}>
         <Text style={[Typography.bodyBold, { color: isCorrect ? colors.success : colors.error }]}>
-          {isCorrect ? (successText || '🎉 Correct!') : `The answer was: ${correctAnswer}`}
+          {isCorrect ? `🎉 ${message}` : message}
         </Text>
+        {!isCorrect && (
+          <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.xs }]}>
+            The answer was: {correctAnswer}
+          </Text>
+        )}
       </View>
       <Button title="Continue" onPress={onNext} size="large" fullWidth />
     </View>
@@ -532,27 +610,46 @@ function RecapCard({
 }) {
   const { colors } = useTheme();
   const { speak } = useSpeech();
+  const { onComplete } = useFeedbackEffects();
   const pct = total > 0 ? Math.round((score / total) * 100) : 100;
+  
+  useEffect(() => {
+    onComplete();
+  }, []);
+
+  const headerStyle = useEntryAnimation(0);
+  const percentStyle = useEntryAnimation(200);
+  const listStyle = useEntryAnimation(400);
 
   return (
     <View style={styles.exerciseContainer}>
+      <ParticleEffect active={true} count={12} spread={120} />
       <View style={styles.centerContent}>
-        <Text style={{ fontSize: 64, textAlign: 'center', marginBottom: Spacing.xxl }}>
-          {pct >= 80 ? '🎉' : pct >= 50 ? '👍' : '💪'}
-        </Text>
-        <Text style={[Typography.h2, { color: colors.text, textAlign: 'center', marginBottom: Spacing.md }]}>Lesson Complete!</Text>
-        <Text style={[Typography.h1, { color: colors.primary, textAlign: 'center' }]}>{pct}%</Text>
-        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>{score} of {total} correct</Text>
+        <Animated.View style={[headerStyle, { alignItems: 'center' }]}>
+          <Text style={{ fontSize: 64, textAlign: 'center', marginBottom: Spacing.xxl }}>
+            {pct >= 80 ? '🎉' : pct >= 50 ? '👍' : '💪'}
+          </Text>
+          <Text style={[Typography.h2, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xs }]}>
+            {getCompletionMessage(pct)}
+          </Text>
+        </Animated.View>
+        <Animated.View style={[percentStyle, { alignItems: 'center', marginTop: Spacing.lg }]}>
+          <Text style={[Typography.h1, { color: colors.primary, textAlign: 'center' }]}>{pct}%</Text>
+          <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>{score} of {total} correct</Text>
+          <View style={[styles.noteBox, { backgroundColor: colors.accent + '20', borderColor: 'transparent', alignSelf: 'stretch', alignItems: 'center', marginTop: Spacing.md }]}>
+             <Text style={[Typography.captionBold, { color: colors.accentDark }]}>+{pct >= 100 ? XP_AWARDS.perfectLesson : XP_AWARDS.lessonComplete} XP earned</Text>
+          </View>
+        </Animated.View>
 
         {missedCount > 0 && (
-          <View style={[styles.noteBox, { backgroundColor: colors.warningLight, borderColor: colors.warning + '40', marginTop: Spacing.lg, alignSelf: 'stretch' }]}>
+          <Animated.View style={[percentStyle, styles.noteBox, { backgroundColor: colors.warningLight, borderColor: colors.warning + '40', marginTop: Spacing.md, alignSelf: 'stretch' }]}>
             <Text style={[Typography.caption, { color: colors.text, textAlign: 'center' }]}>
               💪 You retried {missedCount} phrase{missedCount > 1 ? 's' : ''} — great persistence!
             </Text>
-          </View>
+          </Animated.View>
         )}
 
-        <View style={[styles.recapList, { backgroundColor: colors.surfaceElevated, borderRadius: BorderRadius.lg }]}>
+        <Animated.View style={[listStyle, styles.recapList, { backgroundColor: colors.surfaceElevated, borderRadius: BorderRadius.lg }]}>
           <Text style={[Typography.captionBold, { color: colors.textSecondary, marginBottom: Spacing.md }]}>PHRASES PRACTICED</Text>
           {phrases.slice(0, 6).map((phrase) => (
             <TouchableOpacity
@@ -569,7 +666,7 @@ function RecapCard({
               <Text style={{ fontSize: 16 }}>🔊</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </Animated.View>
       </View>
       <View style={styles.bottomButton}>
         <Button title="Finish" onPress={onFinish} size="large" fullWidth />
@@ -584,8 +681,8 @@ export default function LessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const { profile } = useUser();
-  const { progress, completeSpeakingLesson, updateItemMastery, updateStreak } = useProgress();
-  const { correctFeedback, incorrectFeedback } = useFeedback();
+  const { progress, completeSpeakingLesson, updateItemMastery, updateStreak, addXP } = useProgress();
+  const { onCorrect, onIncorrect, onProgress } = useFeedbackEffects();
 
   const unit = speakingUnits.find((u) => u.id === id);
   if (!unit) {
@@ -654,7 +751,7 @@ export default function LessonScreen() {
     setResultRevealed(true);
 
     const isCorrect = option === current.correctAnswer;
-    isCorrect ? correctFeedback() : incorrectFeedback();
+    isCorrect ? onCorrect() : onIncorrect();
 
     const phraseId = currentPhraseRef.current;
     setTotalAnswered((t) => t + 1);
@@ -670,6 +767,7 @@ export default function LessonScreen() {
   const handleNext = () => {
     const next = currentStep + 1;
     if (next >= exercises.length) return;
+    onProgress();
 
     if (
       exercises[next].type === 'recap' &&
@@ -701,6 +799,12 @@ export default function LessonScreen() {
     const isComplete = completedIds.length + sessionPhrasesRef.current.length >= unit.phrases.length;
     await completeSpeakingLesson(unit.id, newlyCompletedIds, isComplete);
     await updateStreak();
+    
+    // Award XP
+    const pct = totalAnswered > 0 ? Math.round((score / totalAnswered) * 100) : 100;
+    const isPerfect = pct >= 100;
+    await addXP(isPerfect ? XP_AWARDS.perfectLesson : XP_AWARDS.lessonComplete);
+    
     router.back();
   };
 
@@ -726,30 +830,32 @@ export default function LessonScreen() {
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        {current.type === 'intro' && (
-          <IntroCard phrase={current.phrase} showScript={showScript} showRomanized={profile.showRomanized} onNext={handleNext} />
-        )}
-        {current.type === 'listen' && (
-          <ListenCard phrase={current.phrase} hasListened={hasListened} onListen={() => setHasListened(true)} onNext={handleNext} />
-        )}
-        {current.type === 'guidedRecall' && current.options && current.correctAnswer && (
-          <GuidedRecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} showScript={showScript} {...quizProps} />
-        )}
-        {current.type === 'recall' && current.options && current.correctAnswer && (
-          <RecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
-        )}
-        {current.type === 'reverseRecall' && current.options && current.correctAnswer && (
-          <ReverseRecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
-        )}
-        {current.type === 'audioMatch' && current.options && current.correctAnswer && (
-          <AudioMatchCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
-        )}
-        {current.type === 'microReview' && current.options && current.correctAnswer && (
-          <RecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} label="⚡ QUICK REVIEW" {...quizProps} />
-        )}
-        {current.type === 'recap' && (
-          <RecapCard phrases={unit.phrases} score={score} total={totalAnswered} missedCount={requeueCount} onFinish={handleFinish} />
-        )}
+        <Animated.View key={currentStep} style={[{ flex: 1 }, useEntryAnimation(0)]}>
+          {current.type === 'intro' && (
+            <IntroCard phrase={current.phrase} showScript={showScript} showRomanized={profile.showRomanized} onNext={handleNext} />
+          )}
+          {current.type === 'listen' && (
+            <ListenCard phrase={current.phrase} hasListened={hasListened} onListen={() => setHasListened(true)} onNext={handleNext} />
+          )}
+          {current.type === 'guidedRecall' && current.options && current.correctAnswer && (
+            <GuidedRecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} showScript={showScript} {...quizProps} />
+          )}
+          {current.type === 'recall' && current.options && current.correctAnswer && (
+            <RecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
+          )}
+          {current.type === 'reverseRecall' && current.options && current.correctAnswer && (
+            <ReverseRecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
+          )}
+          {current.type === 'audioMatch' && current.options && current.correctAnswer && (
+            <AudioMatchCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
+          )}
+          {current.type === 'microReview' && current.options && current.correctAnswer && (
+            <RecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} label="⚡ QUICK REVIEW" {...quizProps} />
+          )}
+          {current.type === 'recap' && (
+            <RecapCard phrases={unit.phrases} score={score} total={totalAnswered} missedCount={requeueCount} onFinish={handleFinish} />
+          )}
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );

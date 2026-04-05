@@ -6,6 +6,7 @@ import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { UserProvider } from '@/context/UserContext';
 import { ProgressProvider } from '@/context/ProgressContext';
 import { StatusBar } from 'expo-status-bar';
+import { soundManager } from '@/src/design/sound';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -16,7 +17,12 @@ function RootLayoutInner() {
   useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync();
+      // Preload UI sounds after splash is hidden
+      soundManager.preload();
     }
+    return () => {
+      soundManager.cleanup();
+    };
   }, [fontsLoaded]);
 
   if (!fontsLoaded) return null;

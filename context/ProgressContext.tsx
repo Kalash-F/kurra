@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getLevelForXP } from '@/src/design/cultural';
 
 interface LessonProgress {
   completed: boolean;
@@ -31,6 +32,7 @@ interface ProgressData {
   streak: StreakData;
   totalTimeSpent: number; // minutes
   reviewsDone: number;
+  xp: number;
 }
 
 type MasteryLevel = 'new' | 'learning' | 'familiar' | 'mastered';
@@ -46,6 +48,7 @@ interface ProgressContextType {
   getMasteryLevel: (itemId: string) => MasteryLevel;
   updateStreak: () => Promise<void>;
   addTime: (minutes: number) => Promise<void>;
+  addXP: (amount: number) => Promise<void>;
   resetProgress: () => Promise<void>;
   getSpeakingProgress: () => number;
   getScriptProgress: () => number;
@@ -64,6 +67,7 @@ const defaultProgress: ProgressData = {
   streak: defaultStreak,
   totalTimeSpent: 0,
   reviewsDone: 0,
+  xp: 0,
 };
 
 const ProgressContext = createContext<ProgressContextType>({
@@ -77,6 +81,7 @@ const ProgressContext = createContext<ProgressContextType>({
   getMasteryLevel: () => 'new',
   updateStreak: async () => {},
   addTime: async () => {},
+  addXP: async () => {},
   resetProgress: async () => {},
   getSpeakingProgress: () => 0,
   getScriptProgress: () => 0,
@@ -215,6 +220,11 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     await save(newProgress);
   }, [progress, save]);
 
+  const addXP = useCallback(async (amount: number) => {
+    const newProgress = { ...progress, xp: (progress.xp || 0) + amount };
+    await save(newProgress);
+  }, [progress, save]);
+
   const resetProgress = useCallback(async () => {
     await save(defaultProgress);
   }, [save]);
@@ -242,6 +252,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         getMasteryLevel,
         updateStreak,
         addTime,
+        addXP,
         resetProgress,
         getSpeakingProgress,
         getScriptProgress,

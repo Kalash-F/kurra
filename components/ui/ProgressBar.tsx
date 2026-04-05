@@ -1,7 +1,15 @@
-import React from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, StyleSheet } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useTheme } from '@/context/ThemeContext';
 import { BorderRadius } from '@/constants/Typography';
+import { spring, duration } from '@/src/design/motion';
 
 interface ProgressBarProps {
   progress: number; // 0-100
@@ -23,6 +31,49 @@ export function ProgressBar({
   const bgColor = trackColor || colors.progressTrack;
   const clampedProgress = Math.max(0, Math.min(100, progress));
 
+  // Animated width percentage
+  const animatedWidth = useSharedValue(clampedProgress);
+  // Glow pulse opacity
+  const glowOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    // Animate the fill with a satisfying spring
+    animatedWidth.value = withSpring(clampedProgress, spring.settle);
+
+    // Brief glow pulse when progress changes
+    if (showGlow && clampedProgress > 0) {
+      glowOpacity.value = withSequence(
+        withTiming(0.6, { duration: duration.fast }),
+        withTiming(0, { duration: duration.slow })
+      );
+    }
+  }, [clampedProgress, showGlow]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${animatedWidth.value}%`,
+    height,
+    backgroundColor: fillColor,
+    borderRadius: height / 2,
+    position: 'absolute' as const,
+    left: 0,
+    top: 0,
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    position: 'absolute' as const,
+    right: 0,
+    top: -2,
+    width: 12,
+    height: height + 4,
+    borderRadius: (height + 4) / 2,
+    backgroundColor: fillColor,
+    opacity: glowOpacity.value,
+    shadowColor: fillColor,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+  }));
+
   return (
     <View
       style={[
@@ -30,28 +81,14 @@ export function ProgressBar({
         { height, backgroundColor: bgColor, borderRadius: height / 2 },
       ]}
     >
-      <View
-        style={[
-          styles.fill,
-          {
-            width: `${clampedProgress}%`,
-            height,
-            backgroundColor: fillColor,
-            borderRadius: height / 2,
-            ...(showGlow && {
-              shadowColor: fillColor,
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0.5,
-              shadowRadius: 6,
-            }),
-          },
-        ]}
-      />
+      <Animated.View style={fillStyle}>
+        {showGlow && <Animated.View style={glowStyle} />}
+      </Animated.View>
     </View>
   );
 }
 
-interface ProgressRingProps {
+export interface ProgressRingProps {
   progress: number; // 0-100
   size?: number;
   strokeWidth?: number;
@@ -72,9 +109,6 @@ export function ProgressRing({
   const fillColor = color || colors.progressFill;
   const bgColor = trackColor || colors.progressTrack;
   const clampedProgress = Math.max(0, Math.min(100, progress));
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (circumference * clampedProgress) / 100;
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -88,7 +122,6 @@ export function ProgressRing({
             borderColor: bgColor,
           }}
         />
-        {/* Simple visual overlay for progress */}
         <View
           style={{
             position: 'absolute',
@@ -116,10 +149,5 @@ const styles = StyleSheet.create({
   track: {
     width: '100%',
     overflow: 'hidden',
-  },
-  fill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
   },
 });

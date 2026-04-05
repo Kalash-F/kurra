@@ -14,9 +14,11 @@ import { useProgress } from '@/context/ProgressContext';
 import { Card } from '@/components/ui/Card';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Button } from '@/components/ui/Button';
+import { StreakFlame } from '@/components/ui/StreakFlame';
 import { speakingUnits } from '@/data/speakingUnits';
 import { scriptUnits } from '@/data/scriptUnits';
 import { Spacing, BorderRadius, Typography } from '@/constants/Typography';
+import { getWelcomeGreeting, getLevelForXP } from '@/src/design/cultural';
 
 export default function HomeScreen() {
   const { colors } = useTheme();
@@ -31,6 +33,10 @@ export default function HomeScreen() {
   const scriptProg = getScriptProgress();
   const reviewDue = getReviewDue().length;
   const showScript = profile.path === 'speaking_script';
+
+  const isNewDay = progress.streak.lastActiveDate !== new Date().toISOString().split('T')[0];
+  const welcomeText = getWelcomeGreeting(progress.streak.current, isNewDay);
+  const currentLevel = getLevelForXP(progress.xp);
 
   // Find next incomplete lesson
   const nextSpeakingUnit = speakingUnits.find(
@@ -54,7 +60,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-              Welcome back
+              {welcomeText}
             </Text>
             <Text style={[Typography.h2, { color: colors.text }]}>Kurra</Text>
           </View>
@@ -62,14 +68,14 @@ export default function HomeScreen() {
             style={[styles.streakBadge, { backgroundColor: colors.streakGlow }]}
             activeOpacity={0.7}
           >
-            <Text style={styles.streakFire}>🔥</Text>
+            <StreakFlame />
             <Text style={[Typography.bodyBold, { color: colors.streak }]}>
               {progress.streak.current}
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Streak Card */}
+        {/* Progress Card */}
         <Card style={styles.streakCard} variant="elevated">
           <View style={styles.streakCardInner}>
             <View style={styles.streakInfo}>
@@ -83,21 +89,19 @@ export default function HomeScreen() {
             <View style={styles.streakDivider} />
             <View style={styles.streakInfo}>
               <Text style={[Typography.h3, { color: colors.text }]}>
-                {progress.streak.longest}
+                {currentLevel.level}
               </Text>
               <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                best streak
+                {currentLevel.title}
               </Text>
             </View>
-            <View style={styles.streakDivider} />
-            <View style={styles.streakInfo}>
-              <Text style={[Typography.h3, { color: colors.text }]}>
-                {completedSpeaking + completedScript}
-              </Text>
-              <Text style={[Typography.caption, { color: colors.textSecondary }]}>
-                lessons done
-              </Text>
+          </View>
+          <View style={{ marginTop: Spacing.xl }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.xs }}>
+              <Text style={[Typography.small, { color: colors.textTertiary }]}>XP</Text>
+              <Text style={[Typography.small, { color: colors.textTertiary }]}>{currentLevel.xpInLevel} / {currentLevel.xpForLevel}</Text>
             </View>
+            <ProgressBar progress={(currentLevel.xpInLevel / currentLevel.xpForLevel) * 100} height={6} showGlow />
           </View>
         </Card>
 
