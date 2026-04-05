@@ -88,10 +88,10 @@ export default function ReviewScreen() {
   const { speak } = useSpeech();
   const showScript = profile.path === 'speaking_script';
 
-  const reviewItems = useMemo(
-    () => buildReviewItems(progress, showScript),
-    [progress, showScript]
-  );
+  // Only generate review items once when the session starts,
+  // DO NOT use useMemo on progress because updateItemMastery changes progress
+  // and would cause the array to reshuffle while the user is answering!
+  const [reviewItems, setReviewItems] = useState(() => buildReviewItems(progress, showScript));
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -140,6 +140,7 @@ export default function ReviewScreen() {
               setAnswered(0);
               setSelectedAnswer(null);
               setShowResult(false);
+              setReviewItems(buildReviewItems(progress, showScript));
             }}
             style={{ marginTop: Spacing.xxxl }}
             size="large"
