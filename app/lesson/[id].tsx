@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,14 @@ import {
   SafeAreaView,
   ScrollView,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { useProgress } from '@/context/ProgressContext';
 import { useSpeech } from '@/hooks/useSpeech';
+import { useFeedback } from '@/hooks/useFeedback';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -21,64 +23,145 @@ import { Spacing, BorderRadius, Typography } from '@/constants/Typography';
 
 const { width } = Dimensions.get('window');
 
-type ExerciseType = 'intro' | 'listen' | 'recall' | 'audioMatch' | 'fillGap' | 'recap';
+/* ────────────────────────── types ────────────────────────── */
+
+type ExerciseType =
+  | 'intro'
+  | 'listen'
+  | 'guidedRecall'
+  | 'recall'
+  | 'reverseRecall'
+  | 'audioMatch'
+  | 'microReview'
+  | 'recap';
 
 interface Exercise {
   type: ExerciseType;
   phrase: Phrase;
   options?: string[];
   correctAnswer?: string;
-  gapSentence?: string;
-  missingWord?: string;
 }
+
+/* ────────────────────── helpers ─────────────────────── */
+
+function shuffleOptions(correct: string, pool: string[]): string[] {
+  const others = pool
+    .filter((p) => p !== correct)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3);
+  return [correct, ...others].sort(() => Math.random() - 0.5);
+}
+
+/* ────────── multi-stage progressive exercise builder ─────── */
 
 function buildExercises(phrases: Phrase[]): Exercise[] {
   const exercises: Exercise[] = [];
+  const batchSize = 2;
+  const batches: Phrase[][] = [];
 
-  // Show each phrase: intro → listen → recall exercise
-  phrases.forEach((phrase, idx) => {
-    // Intro card
-    exercises.push({ type: 'intro', phrase });
+  for (let i = 0; i < phrases.length; i += batchSize) {
+    batches.push(phrases.slice(i, i + batchSize));
+  }
 
-    // Listen and repeat
-    if (idx < 4) {
+  const allRomanized = phrases.map((p) => p.romanized);
+  const allEnglish = phrases.map((p) => p.english);
+  const introduced: Phrase[] = [];
+
+  batches.forEach((batch, batchIdx) => {
+    // ── STAGE 1: INTRODUCE ──
+    batch.forEach((phrase) => {
+      exercises.push({ type: 'intro', phrase });
       exercises.push({ type: 'listen', phrase });
-    }
-
-    // Recall: English → Romanized (multiple choice)
-    const otherOptions = phrases
-      .filter((p) => p.id !== phrase.id)
-      .map((p) => p.romanized)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
-    exercises.push({
-      type: 'recall',
-      phrase,
-      options: [phrase.romanized, ...otherOptions].sort(() => Math.random() - 0.5),
-      correctAnswer: phrase.romanized,
     });
 
-    // Audio match: what does this mean?
-    if (idx % 2 === 0) {
-      const otherEnglish = phrases
-        .filter((p) => p.id !== phrase.id)
-        .map((p) => p.english)
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 3);
+    // ── STAGE 2: GUIDED RECALL (answer visible at top as hint) ──
+    batch.forEach((phrase) => {
+      exercises.push({
+        type: 'guidedRecall',
+        phrase,
+        options: shuffleOptions(phrase.romanized, allRomanized),
+        correctAnswer: phrase.romanized,
+      });
+    });
+
+    introduced.push(...batch);
+
+    // ── STAGE 3: PRACTICE — varied unguided exercises ──
+    batch.forEach((phrase) => {
+      exercises.push({
+        type: 'recall',
+        phrase,
+        options: shuffleOptions(phrase.romanized, allRomanized),
+        correctAnswer: phrase.romanized,
+      });
+    });
+
+    // Alternate reverse / audio across the batch
+    exercises.push({
+      type: 'reverseRecall',
+      phrase: batch[0],
+      options: shuffleOptions(batch[0].english, allEnglish),
+      correctAnswer: batch[0].english,
+    });
+
+    if (batch.length > 1) {
+      exercises.push({
+        type: 'audioMatch',
+        phrase: batch[1],
+        options: shuffleOptions(batch[1].english, allEnglish),
+        correctAnswer: batch[1].english,
+      });
+    }
+
+    // ── STAGE 4: MICRO-REVIEW from earlier batches ──
+    if (batchIdx > 0) {
+      const previous = introduced.slice(0, -batch.length);
+      const pick = previous[Math.floor(Math.random() * previous.length)];
+      exercises.push({
+        type: 'microReview',
+        phrase: pick,
+        options: shuffleOptions(pick.romanized, allRomanized),
+        correctAnswer: pick.romanized,
+      });
+    }
+  });
+
+  // ── CHALLENGE ROUND: mixed quiz over all phrases ──
+  const challenge = [...phrases].sort(() => Math.random() - 0.5).slice(0, Math.min(6, phrases.length));
+  challenge.forEach((phrase, idx) => {
+    if (idx % 3 === 0) {
+      exercises.push({
+        type: 'recall',
+        phrase,
+        options: shuffleOptions(phrase.romanized, allRomanized),
+        correctAnswer: phrase.romanized,
+      });
+    } else if (idx % 3 === 1) {
+      exercises.push({
+        type: 'reverseRecall',
+        phrase,
+        options: shuffleOptions(phrase.english, allEnglish),
+        correctAnswer: phrase.english,
+      });
+    } else {
       exercises.push({
         type: 'audioMatch',
         phrase,
-        options: [phrase.english, ...otherEnglish].sort(() => Math.random() - 0.5),
+        options: shuffleOptions(phrase.english, allEnglish),
         correctAnswer: phrase.english,
       });
     }
   });
 
-  // Recap at end
+  // ── RECAP ──
   exercises.push({ type: 'recap', phrase: phrases[0] });
 
   return exercises;
 }
+
+/* ═══════════════════════ CARD COMPONENTS ═══════════════════════ */
+
+/* ──────────── Intro Card ──────────── */
 
 function IntroCard({
   phrase,
@@ -149,6 +232,8 @@ function IntroCard({
   );
 }
 
+/* ──────────── Listen Card ──────────── */
+
 function ListenCard({ phrase, onNext }: { phrase: Phrase; onNext: () => void }) {
   const { colors } = useTheme();
   const { speak } = useSpeech();
@@ -194,20 +279,26 @@ function ListenCard({ phrase, onNext }: { phrase: Phrase; onNext: () => void }) 
   );
 }
 
-function RecallCard({
+/* ──────────── Guided Recall Card (with hint) ──────────── */
+
+function GuidedRecallCard({
   phrase,
   options,
   correctAnswer,
+  showScript,
   onNext,
   onAnswer,
 }: {
   phrase: Phrase;
   options: string[];
   correctAnswer: string;
+  showScript: boolean;
   onNext: () => void;
   onAnswer: (correct: boolean) => void;
 }) {
   const { colors } = useTheme();
+  const { speak } = useSpeech();
+  const { correctFeedback, incorrectFeedback } = useFeedback();
   const [selected, setSelected] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
 
@@ -215,22 +306,35 @@ function RecallCard({
     if (showResult) return;
     setSelected(option);
     setShowResult(true);
-    onAnswer(option === correctAnswer);
+    const correct = option === correctAnswer;
+    correct ? correctFeedback() : incorrectFeedback();
+    onAnswer(correct);
   };
 
   return (
     <View style={styles.exerciseContainer}>
-      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.xxl }]}>
-        RECALL
+      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.md }]}>
+        GUIDED PRACTICE
       </Text>
 
       <View style={styles.centerContent}>
-        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xxxl }]}>
-          "{phrase.english}"
-        </Text>
+        {/* Hint area — shows the answer so the user can match */}
+        <Card variant="outlined" padding="medium" style={{ marginBottom: Spacing.xxl, width: '100%' }}>
+          <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.sm }]}>
+            Remember this phrase:
+          </Text>
+          <Text style={[Typography.h4, { color: colors.text, textAlign: 'center' }]}>
+            {phrase.english}
+          </Text>
+          <TouchableOpacity onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })} style={{ alignSelf: 'center', marginTop: Spacing.sm }}>
+            <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center' }]}>
+              {phrase.romanized} 🔊
+            </Text>
+          </TouchableOpacity>
+        </Card>
 
-        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.xxl }]}>
-          Choose the correct Nepali phrase
+        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg }]}>
+          Now pick the correct phrase for "{phrase.english}"
         </Text>
 
         <View style={styles.optionsList}>
@@ -239,6 +343,11 @@ function RecallCard({
             const isCorrect = option === correctAnswer;
             let bg = colors.surface;
             let border = colors.border;
+
+            // Subtle hint: correct option gets a tiny accent bg
+            if (!showResult && isCorrect) {
+              bg = colors.primary + '08';
+            }
 
             if (showResult) {
               if (isCorrect) {
@@ -259,9 +368,103 @@ function RecallCard({
                 disabled={showResult}
               >
                 <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
-                {showResult && isCorrect && (
-                  <Text style={styles.optionMark}>✓</Text>
+                {showResult && isCorrect && <Text style={styles.optionMark}>✓</Text>}
+                {showResult && isSelected && !isCorrect && (
+                  <Text style={[styles.optionMark, { color: colors.error }]}>✗</Text>
                 )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      {showResult && (
+        <View style={styles.bottomButton}>
+          <View style={styles.resultFeedback}>
+            <Text
+              style={[
+                Typography.bodyBold,
+                { color: selected === correctAnswer ? colors.success : colors.error },
+              ]}
+            >
+              {selected === correctAnswer ? '🎉 Great start!' : `The answer was: ${correctAnswer}`}
+            </Text>
+          </View>
+          <Button title="Continue" onPress={onNext} size="large" fullWidth />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/* ──────────── Recall Card (English → Nepali) ──────────── */
+
+function RecallCard({
+  phrase,
+  options,
+  correctAnswer,
+  label,
+  onNext,
+  onAnswer,
+}: {
+  phrase: Phrase;
+  options: string[];
+  correctAnswer: string;
+  label?: string;
+  onNext: () => void;
+  onAnswer: (correct: boolean) => void;
+}) {
+  const { colors } = useTheme();
+  const { correctFeedback, incorrectFeedback } = useFeedback();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [showResult, setShowResult] = useState(false);
+
+  const handleSelect = (option: string) => {
+    if (showResult) return;
+    setSelected(option);
+    setShowResult(true);
+    const correct = option === correctAnswer;
+    correct ? correctFeedback() : incorrectFeedback();
+    onAnswer(correct);
+  };
+
+  return (
+    <View style={styles.exerciseContainer}>
+      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.xxl }]}>
+        {label || 'RECALL'}
+      </Text>
+
+      <View style={styles.centerContent}>
+        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xxxl }]}>
+          "{phrase.english}"
+        </Text>
+
+        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.xxl }]}>
+          Choose the correct Nepali phrase
+        </Text>
+
+        <View style={styles.optionsList}>
+          {options.map((option, idx) => {
+            const isSelected = selected === option;
+            const isCorrect = option === correctAnswer;
+            let bg = colors.surface;
+            let border = colors.border;
+
+            if (showResult) {
+              if (isCorrect) { bg = colors.correctBg; border = colors.correctBorder; }
+              else if (isSelected && !isCorrect) { bg = colors.incorrectBg; border = colors.incorrectBorder; }
+            }
+
+            return (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.optionBtn, { backgroundColor: bg, borderColor: border }]}
+                onPress={() => handleSelect(option)}
+                activeOpacity={0.7}
+                disabled={showResult}
+              >
+                <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
+                {showResult && isCorrect && <Text style={styles.optionMark}>✓</Text>}
                 {showResult && isSelected && !isCorrect && (
                   <Text style={[styles.optionMark, { color: colors.error }]}>✗</Text>
                 )}
@@ -290,6 +493,114 @@ function RecallCard({
   );
 }
 
+/* ──────────── Reverse Recall Card (Nepali → English) ──────────── */
+
+function ReverseRecallCard({
+  phrase,
+  options,
+  correctAnswer,
+  onNext,
+  onAnswer,
+}: {
+  phrase: Phrase;
+  options: string[];
+  correctAnswer: string;
+  onNext: () => void;
+  onAnswer: (correct: boolean) => void;
+}) {
+  const { colors } = useTheme();
+  const { speak } = useSpeech();
+  const { correctFeedback, incorrectFeedback } = useFeedback();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [showResult, setShowResult] = useState(false);
+
+  const handleSelect = (option: string) => {
+    if (showResult) return;
+    setSelected(option);
+    setShowResult(true);
+    const correct = option === correctAnswer;
+    correct ? correctFeedback() : incorrectFeedback();
+    onAnswer(correct);
+  };
+
+  return (
+    <View style={styles.exerciseContainer}>
+      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.xxl }]}>
+        WHAT DOES THIS MEAN?
+      </Text>
+
+      <View style={styles.centerContent}>
+        <TouchableOpacity
+          onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })}
+          style={{ alignItems: 'center', marginBottom: Spacing.lg }}
+        >
+          <Text style={[Typography.devanagariSmall, { color: colors.devanagari, textAlign: 'center' }]}>
+            {phrase.devanagari}
+          </Text>
+          <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center', marginTop: Spacing.xs }]}>
+            {phrase.romanized}
+          </Text>
+          <Text style={[Typography.caption, { color: colors.primary, marginTop: Spacing.sm }]}>
+            🔊 Tap to hear
+          </Text>
+        </TouchableOpacity>
+
+        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.xl }]}>
+          Choose the English meaning
+        </Text>
+
+        <View style={styles.optionsList}>
+          {options.map((option, idx) => {
+            const isSelected = selected === option;
+            const isCorrect = option === correctAnswer;
+            let bg = colors.surface;
+            let border = colors.border;
+
+            if (showResult) {
+              if (isCorrect) { bg = colors.correctBg; border = colors.correctBorder; }
+              else if (isSelected && !isCorrect) { bg = colors.incorrectBg; border = colors.incorrectBorder; }
+            }
+
+            return (
+              <TouchableOpacity
+                key={idx}
+                style={[styles.optionBtn, { backgroundColor: bg, borderColor: border }]}
+                onPress={() => handleSelect(option)}
+                activeOpacity={0.7}
+                disabled={showResult}
+              >
+                <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
+                {showResult && isCorrect && <Text style={styles.optionMark}>✓</Text>}
+                {showResult && isSelected && !isCorrect && (
+                  <Text style={[styles.optionMark, { color: colors.error }]}>✗</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      {showResult && (
+        <View style={styles.bottomButton}>
+          <View style={styles.resultFeedback}>
+            <Text
+              style={[
+                Typography.bodyBold,
+                { color: selected === correctAnswer ? colors.success : colors.error },
+              ]}
+            >
+              {selected === correctAnswer ? '🎉 Correct!' : `The answer was: ${correctAnswer}`}
+            </Text>
+          </View>
+          <Button title="Continue" onPress={onNext} size="large" fullWidth />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/* ──────────── Audio Match Card ──────────── */
+
 function AudioMatchCard({
   phrase,
   options,
@@ -305,6 +616,7 @@ function AudioMatchCard({
 }) {
   const { colors } = useTheme();
   const { speak } = useSpeech();
+  const { correctFeedback, incorrectFeedback } = useFeedback();
   const [selected, setSelected] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
 
@@ -312,7 +624,9 @@ function AudioMatchCard({
     if (showResult) return;
     setSelected(option);
     setShowResult(true);
-    onAnswer(option === correctAnswer);
+    const correct = option === correctAnswer;
+    correct ? correctFeedback() : incorrectFeedback();
+    onAnswer(correct);
   };
 
   return (
@@ -342,13 +656,8 @@ function AudioMatchCard({
             let border = colors.border;
 
             if (showResult) {
-              if (isCorrect) {
-                bg = colors.correctBg;
-                border = colors.correctBorder;
-              } else if (isSelected && !isCorrect) {
-                bg = colors.incorrectBg;
-                border = colors.incorrectBorder;
-              }
+              if (isCorrect) { bg = colors.correctBg; border = colors.correctBorder; }
+              else if (isSelected && !isCorrect) { bg = colors.incorrectBg; border = colors.incorrectBorder; }
             }
 
             return (
@@ -368,6 +677,16 @@ function AudioMatchCard({
 
       {showResult && (
         <View style={styles.bottomButton}>
+          <View style={styles.resultFeedback}>
+            <Text
+              style={[
+                Typography.bodyBold,
+                { color: selected === correctAnswer ? colors.success : colors.error },
+              ]}
+            >
+              {selected === correctAnswer ? '🎉 Correct!' : `The answer was: ${correctAnswer}`}
+            </Text>
+          </View>
           <Button title="Continue" onPress={onNext} size="large" fullWidth />
         </View>
       )}
@@ -375,15 +694,19 @@ function AudioMatchCard({
   );
 }
 
+/* ──────────── Recap Card ──────────── */
+
 function RecapCard({
   phrases,
   score,
   total,
+  missedCount,
   onFinish,
 }: {
   phrases: Phrase[];
   score: number;
   total: number;
+  missedCount: number;
   onFinish: () => void;
 }) {
   const { colors } = useTheme();
@@ -406,9 +729,17 @@ function RecapCard({
           {score} of {total} correct
         </Text>
 
+        {missedCount > 0 && (
+          <View style={[styles.noteBox, { backgroundColor: colors.warningLight, borderColor: colors.warning + '40', marginTop: Spacing.lg, alignSelf: 'stretch' }]}>
+            <Text style={[Typography.caption, { color: colors.text, textAlign: 'center' }]}>
+              💪 You retried {missedCount} phrase{missedCount > 1 ? 's' : ''} — great persistence!
+            </Text>
+          </View>
+        )}
+
         <View style={[styles.recapList, { backgroundColor: colors.surfaceElevated, borderRadius: BorderRadius.lg }]}>
           <Text style={[Typography.captionBold, { color: colors.textSecondary, marginBottom: Spacing.md }]}>
-            PHRASES LEARNED
+            PHRASES PRACTICED
           </Text>
           {phrases.slice(0, 6).map((phrase) => (
             <TouchableOpacity
@@ -437,6 +768,8 @@ function RecapCard({
   );
 }
 
+/* ═══════════════════════ MAIN LESSON SCREEN ═══════════════════════ */
+
 export default function LessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
@@ -455,24 +788,59 @@ export default function LessonScreen() {
   }
 
   const showScript = profile.path === 'speaking_script';
-  const exercises = useMemo(() => buildExercises(unit.phrases), [unit.id]);
+  const initialExercises = useMemo(() => buildExercises(unit.phrases), [unit.id]);
 
+  const [exercises, setExercises] = useState<Exercise[]>(initialExercises);
   const [currentStep, setCurrentStep] = useState(0);
   const [score, setScore] = useState(0);
   const [totalAnswered, setTotalAnswered] = useState(0);
+  const missedIds = useRef(new Set<string>());
+  const [requeueInserted, setRequeueInserted] = useState(false);
+  const [requeueCount, setRequeueCount] = useState(0);
 
   const progress = ((currentStep + 1) / exercises.length) * 100;
   const current = exercises[currentStep];
 
   const handleNext = () => {
-    if (currentStep < exercises.length - 1) {
-      setCurrentStep(currentStep + 1);
+    const next = currentStep + 1;
+    if (next >= exercises.length) return;
+
+    // Before showing recap, inject re-queue exercises for missed items
+    if (
+      exercises[next].type === 'recap' &&
+      missedIds.current.size > 0 &&
+      !requeueInserted
+    ) {
+      const missed = unit.phrases.filter((p) => missedIds.current.has(p.id));
+      const allRomanized = unit.phrases.map((p) => p.romanized);
+
+      const requeueExs: Exercise[] = missed.map((phrase) => ({
+        type: 'recall' as ExerciseType,
+        phrase,
+        options: shuffleOptions(phrase.romanized, allRomanized),
+        correctAnswer: phrase.romanized,
+      }));
+
+      setExercises((prev) => [
+        ...prev.slice(0, next),
+        ...requeueExs,
+        prev[prev.length - 1], // recap stays at end
+      ]);
+      setRequeueInserted(true);
+      setRequeueCount(missed.length);
     }
+
+    setCurrentStep(next);
   };
 
   const handleAnswer = async (correct: boolean) => {
-    setTotalAnswered(totalAnswered + 1);
-    if (correct) setScore(score + 1);
+    setTotalAnswered((t) => t + 1);
+    if (correct) {
+      setScore((s) => s + 1);
+      missedIds.current.delete(current.phrase.id);
+    } else {
+      missedIds.current.add(current.phrase.id);
+    }
     await updateItemMastery(current.phrase.id, correct);
   };
 
@@ -514,8 +882,30 @@ export default function LessonScreen() {
         {current.type === 'listen' && (
           <ListenCard phrase={current.phrase} onNext={handleNext} />
         )}
+        {current.type === 'guidedRecall' && current.options && current.correctAnswer && (
+          <GuidedRecallCard
+            key={currentStep}
+            phrase={current.phrase}
+            options={current.options}
+            correctAnswer={current.correctAnswer}
+            showScript={showScript}
+            onNext={handleNext}
+            onAnswer={handleAnswer}
+          />
+        )}
         {current.type === 'recall' && current.options && current.correctAnswer && (
           <RecallCard
+            key={currentStep}
+            phrase={current.phrase}
+            options={current.options}
+            correctAnswer={current.correctAnswer}
+            onNext={handleNext}
+            onAnswer={handleAnswer}
+          />
+        )}
+        {current.type === 'reverseRecall' && current.options && current.correctAnswer && (
+          <ReverseRecallCard
+            key={currentStep}
             phrase={current.phrase}
             options={current.options}
             correctAnswer={current.correctAnswer}
@@ -525,9 +915,21 @@ export default function LessonScreen() {
         )}
         {current.type === 'audioMatch' && current.options && current.correctAnswer && (
           <AudioMatchCard
+            key={currentStep}
             phrase={current.phrase}
             options={current.options}
             correctAnswer={current.correctAnswer}
+            onNext={handleNext}
+            onAnswer={handleAnswer}
+          />
+        )}
+        {current.type === 'microReview' && current.options && current.correctAnswer && (
+          <RecallCard
+            key={currentStep}
+            phrase={current.phrase}
+            options={current.options}
+            correctAnswer={current.correctAnswer}
+            label="⚡ QUICK REVIEW"
             onNext={handleNext}
             onAnswer={handleAnswer}
           />
@@ -537,6 +939,7 @@ export default function LessonScreen() {
             phrases={unit.phrases}
             score={score}
             total={totalAnswered}
+            missedCount={requeueCount}
             onFinish={handleFinish}
           />
         )}
@@ -544,6 +947,8 @@ export default function LessonScreen() {
     </SafeAreaView>
   );
 }
+
+/* ═══════════════════════ STYLES ═══════════════════════ */
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },

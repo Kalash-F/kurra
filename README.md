@@ -54,6 +54,28 @@ Users can completely skip this if they only want speaking.
 
 ---
 
+### 🧠 Progressive multi-stage lessons
+
+Most language apps show you a word once, quiz you once, and move on. That doesn't work — especially for a new script and new sounds. Kurra's lessons are built around how memory actually forms.
+
+Every lesson follows a **4-stage cycle**, repeated in small batches of 2 phrases at a time:
+
+**1. Introduce** — See the phrase with its English meaning, romanised pronunciation, phonetic guide, and Devanagari. Hear it spoken. No pressure, just absorption.
+
+**2. Guided practice** — A quiz where the answer is still visible as a hint. This builds the motor pattern of selecting correct answers and reinforces the association before the scaffolding is removed. You can't really fail here — and that's the point. Confidence enables learning.
+
+**3. Unguided practice** — The hints disappear. You're tested with varied exercise types: English-to-Nepali recall, Nepali-to-English reverse recall, and audio-only listening comprehension. Each phrase appears multiple times in different formats, forcing your brain to retrieve the information through different pathways.
+
+**4. Interleaved review** — After every batch, Kurra quizzes you on phrases from earlier in the lesson. This is called *interleaving* — mixing old and new material — and research shows it dramatically improves long-term retention compared to studying items in isolated blocks.
+
+After all batches, a **challenge round** mixes exercises from every phrase in the lesson. And critically: **wrong answers get re-queued**. Any phrase you miss is asked again before the lesson ends, so you never leave a lesson with unresolved gaps.
+
+This means each phrase appears **3-5 times** across different exercise types throughout a single lesson, instead of just once. A lesson takes ~8-12 minutes instead of ~3 minutes, but the retention difference is significant — you actually *remember* what you learned.
+
+The result: lessons that respect how human memory works, not how software wants to present content.
+
+---
+
 ### 🔁 Recall-based system
 
 Kurra is built around:

@@ -32,6 +32,8 @@ interface ProgressData {
   reviewsDone: number;
 }
 
+type MasteryLevel = 'new' | 'learning' | 'familiar' | 'mastered';
+
 interface ProgressContextType {
   progress: ProgressData;
   isLoading: boolean;
@@ -40,6 +42,7 @@ interface ProgressContextType {
   updateItemMastery: (itemId: string, correct: boolean) => Promise<void>;
   getWeakItems: () => string[];
   getReviewDue: () => string[];
+  getMasteryLevel: (itemId: string) => MasteryLevel;
   updateStreak: () => Promise<void>;
   addTime: (minutes: number) => Promise<void>;
   resetProgress: () => Promise<void>;
@@ -70,6 +73,7 @@ const ProgressContext = createContext<ProgressContextType>({
   updateItemMastery: async () => {},
   getWeakItems: () => [],
   getReviewDue: () => [],
+  getMasteryLevel: () => 'new',
   updateStreak: async () => {},
   addTime: async () => {},
   resetProgress: async () => {},
@@ -166,6 +170,17 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       .map(([id]) => id);
   }, [progress]);
 
+  const getMasteryLevel = useCallback((itemId: string): MasteryLevel => {
+    const mastery = progress.itemMastery[itemId];
+    if (!mastery) return 'new';
+    const total = mastery.correctCount + mastery.incorrectCount;
+    if (total === 0) return 'new';
+    const ratio = mastery.correctCount / total;
+    if (ratio >= 0.85 && total >= 4) return 'mastered';
+    if (ratio >= 0.6 && total >= 2) return 'familiar';
+    return 'learning';
+  }, [progress]);
+
   const updateStreak = useCallback(async () => {
     const today = getToday();
     const newProgress = { ...progress };
@@ -217,6 +232,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         updateItemMastery,
         getWeakItems,
         getReviewDue,
+        getMasteryLevel,
         updateStreak,
         addTime,
         resetProgress,
