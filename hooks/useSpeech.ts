@@ -33,6 +33,9 @@ export function useSpeech() {
         const phraseMap = profile.voicePreference === 'male' ? phraseAudioMapMale : phraseAudioMapFemale;
         const scriptMap = profile.voicePreference === 'male' ? scriptAudioMapMale : scriptAudioMapFemale;
         const audioAsset = phraseMap[options.audioFile] || scriptMap[options.audioFile];
+        if (!audioAsset) {
+          console.log(`[audio] "${options.audioFile}" not yet generated — falling back to TTS`);
+        }
         if (audioAsset) {
           await Audio.setAudioModeAsync({
             playsInSilentModeIOS: true,
