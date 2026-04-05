@@ -161,14 +161,12 @@ function OptionList({
   selected,
   showResult,
   onSelect,
-  hintCorrect,
 }: {
   options: string[];
   correctAnswer: string;
   selected: string | null;
   showResult: boolean;
   onSelect: (opt: string) => void;
-  hintCorrect?: boolean;
 }) {
   const { colors } = useTheme();
 
@@ -180,9 +178,6 @@ function OptionList({
         let bg = colors.surface;
         let border = colors.border;
 
-        if (!showResult && hintCorrect && isCorrect) {
-          bg = colors.primary + '08';
-        }
         if (showResult) {
           if (isCorrect) { bg = colors.correctBg; border = colors.correctBorder; }
           else if (isSelected && !isCorrect) { bg = colors.incorrectBg; border = colors.incorrectBorder; }
@@ -370,6 +365,11 @@ function GuidedRecallCard({
 } & QuizState) {
   const { colors } = useTheme();
   const { speak } = useSpeech();
+  const [showHint, setShowHint] = useState(false);
+
+  useEffect(() => {
+    setShowHint(false);
+  }, [phrase.id]);
 
   return (
     <View style={styles.exerciseContainer}>
@@ -377,19 +377,29 @@ function GuidedRecallCard({
         GUIDED PRACTICE
       </Text>
       <View style={styles.centerContent}>
-        <Card variant="outlined" padding="medium" style={{ marginBottom: Spacing.xxl, width: '100%' }}>
-          <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.sm }]}>Remember this phrase:</Text>
-          <Text style={[Typography.h4, { color: colors.text, textAlign: 'center' }]}>{phrase.english}</Text>
-          <TouchableOpacity onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })} style={{ alignSelf: 'center', marginTop: Spacing.sm }}>
-            <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center' }]}>{phrase.romanized} 🔊</Text>
+        {!showHint ? (
+          <TouchableOpacity
+            style={{ marginBottom: Spacing.xxl, width: '100%', alignItems: 'center', padding: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: colors.surface }}
+            onPress={() => setShowHint(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={[Typography.bodyBold, { color: colors.primary }]}>💡 Show Hint</Text>
           </TouchableOpacity>
-        </Card>
+        ) : (
+          <Card variant="outlined" padding="medium" style={{ marginBottom: Spacing.xxl, width: '100%' }}>
+            <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.sm }]}>Remember this phrase:</Text>
+            <Text style={[Typography.h4, { color: colors.text, textAlign: 'center' }]}>{phrase.english}</Text>
+            <TouchableOpacity onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })} style={{ alignSelf: 'center', marginTop: Spacing.sm }}>
+              <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center' }]}>{phrase.romanized} 🔊</Text>
+            </TouchableOpacity>
+          </Card>
+        )}
 
         <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg }]}>
           Now pick the correct phrase for "{phrase.english}"
         </Text>
 
-        <OptionList options={options} correctAnswer={correctAnswer} selected={selected} showResult={showResult} onSelect={onSelect} hintCorrect />
+        <OptionList options={options} correctAnswer={correctAnswer} selected={selected} showResult={showResult} onSelect={onSelect} />
       </View>
 
       {showResult && <ResultFooter selected={selected} correctAnswer={correctAnswer} onNext={onNext} successText="🎉 Great start!" />}

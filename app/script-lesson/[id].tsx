@@ -144,10 +144,10 @@ function buildExercises(items: ScriptItem[]): Exercise[] {
 /* ──────────── Option List (shared renderer for text options) ──────────── */
 
 function OptionList({
-  options, correctAnswer, selected, showResult, onSelect, hintCorrect,
+  options, correctAnswer, selected, showResult, onSelect,
 }: {
   options: string[]; correctAnswer: string; selected: string | null;
-  showResult: boolean; onSelect: (opt: string) => void; hintCorrect?: boolean;
+  showResult: boolean; onSelect: (opt: string) => void;
 }) {
   const { colors } = useTheme();
   return (
@@ -157,7 +157,6 @@ function OptionList({
         const isCorrect = option === correctAnswer;
         let bg = colors.surface;
         let border = colors.border;
-        if (!showResult && hintCorrect && isCorrect) bg = colors.primary + '08';
         if (showResult) {
           if (isCorrect) { bg = colors.correctBg; border = colors.correctBorder; }
           else if (isSelected) { bg = colors.incorrectBg; border = colors.incorrectBorder; }
@@ -252,23 +251,39 @@ function TeachCard({ item, onNext }: { item: ScriptItem; onNext: () => void }) {
 function GuidedRecogniseCard({ item, options, correctAnswer, selected, showResult, onSelect, onNext }: { item: ScriptItem; options: string[]; correctAnswer: string; } & QuizState) {
   const { colors } = useTheme();
   const { speak } = useSpeech();
+  const [showHint, setShowHint] = useState(false);
+
+  useEffect(() => {
+    setShowHint(false);
+  }, [item.character]);
+
   return (
     <View style={styles.exerciseContainer}>
       <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.md }]}>GUIDED PRACTICE</Text>
       <View style={styles.centerContent}>
-        <Card variant="outlined" padding="medium" style={{ marginBottom: Spacing.xl, width: '100%' }}>
-          <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.sm }]}>Remember this character:</Text>
-          <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.md }}>
-            <Text style={[Typography.devanagariSmall, { color: colors.devanagari }]}>{item.character}</Text>
-            <Text style={[Typography.h4, { color: colors.text }]}>=</Text>
-            <Text style={[Typography.romanized, { color: colors.romanized }]}>{item.transliteration}</Text>
-          </View>
-        </Card>
+        {!showHint ? (
+          <TouchableOpacity
+            style={{ marginBottom: Spacing.xl, width: '100%', alignItems: 'center', padding: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: colors.surface }}
+            onPress={() => setShowHint(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={[Typography.bodyBold, { color: colors.primary }]}>💡 Show Hint</Text>
+          </TouchableOpacity>
+        ) : (
+          <Card variant="outlined" padding="medium" style={{ marginBottom: Spacing.xl, width: '100%' }}>
+            <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.sm }]}>Remember this character:</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.md }}>
+              <Text style={[Typography.devanagariSmall, { color: colors.devanagari }]}>{item.character}</Text>
+              <Text style={[Typography.h4, { color: colors.text }]}>=</Text>
+              <Text style={[Typography.romanized, { color: colors.romanized }]}>{item.transliteration}</Text>
+            </View>
+          </Card>
+        )}
         <TouchableOpacity style={[styles.charDisplay, { backgroundColor: colors.scriptCharBg, borderColor: colors.scriptCharBorder }]} onPress={() => speak(item.character, { audioFile: item.audioFile })} activeOpacity={0.7}>
           <Text style={[item.character.length <= 2 ? Typography.devanagariLarge : Typography.devanagariMedium, { color: colors.devanagari, textAlign: 'center' }]}>{item.character}</Text>
         </TouchableOpacity>
         <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.lg, marginBottom: Spacing.lg }]}>Now pick the correct sound</Text>
-        <OptionList options={options} correctAnswer={correctAnswer} selected={selected} showResult={showResult} onSelect={onSelect} hintCorrect />
+        <OptionList options={options} correctAnswer={correctAnswer} selected={selected} showResult={showResult} onSelect={onSelect} />
       </View>
       {showResult && <ResultFooter selected={selected} correctAnswer={correctAnswer} onNext={onNext} successText="🎉 Great start!" />}
     </View>
