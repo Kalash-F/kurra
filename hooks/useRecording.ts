@@ -25,7 +25,8 @@ export interface UseRecordingResult {
  * One-take recorder with compare playback.
  * States: idle → recording → recorded → playingUser → playingModel
  * Retake replaces the current take. Cleanup on unmount.
- * Mic denial sets permissionDenied and never throws.
+ * permissionDenied ONLY when requestPermissionsAsync().granted === false.
+ * Other start errors return to idle (retryable) and never throw.
  */
 export function useRecording(): UseRecordingResult {
   const [snapshot, setSnapshot] = useState<RecordingSnapshot>(INITIAL_RECORDING_SNAPSHOT);
@@ -85,7 +86,6 @@ export function useRecording(): UseRecordingResult {
     return () => {
       mountedRef.current = false;
       void cleanup().then(() => {
-        // Mirror unmount stop: discard URI / leave recording
         uriRef.current = null;
       });
     };
@@ -105,8 +105,12 @@ export function useRecording(): UseRecordingResult {
         return;
       }
 
+      if (!mountedRef.current) return;
+
       await unloadSound();
       await unloadRecording();
+
+      if (!mountedRef.current) return;
 
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
@@ -115,14 +119,31 @@ export function useRecording(): UseRecordingResult {
         shouldDuckAndroid: true,
       });
 
+      if (!mountedRef.current) return;
+
+      // Assign early so unmount mid-prepare can abort/unload.
       const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-      await recording.startAsync();
       recordingRef.current = recording;
 
-      if (mountedRef.current) apply({ type: 'recording_started' });
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+
+      if (!mountedRef.current) {
+        await unloadRecording();
+        return;
+      }
+
+      await recording.startAsync();
+
+      if (!mountedRef.current) {
+        await unloadRecording();
+        return;
+      }
+
+      apply({ type: 'recording_started' });
     } catch {
-      if (mountedRef.current) apply({ type: 'permission_denied' });
+      // Non-permission failures are retryable — do not lock into permissionDenied.
+      await unloadRecording();
+      if (mountedRef.current) apply({ type: 'start_failed' });
     }
   }, [apply, unloadRecording, unloadSound]);
 

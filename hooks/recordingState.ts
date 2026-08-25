@@ -13,6 +13,8 @@ export interface RecordingSnapshot {
 
 export type RecordingEvent =
   | { type: 'permission_denied' }
+  /** Non-permission start failure — stay idle so the user can retry. */
+  | { type: 'start_failed' }
   | { type: 'recording_started' }
   | { type: 'recording_stopped'; uri: string | null }
   | { type: 'play_user' }
@@ -32,7 +34,8 @@ export const INITIAL_RECORDING_SNAPSHOT: RecordingSnapshot = {
 /**
  * Pure recording UI state machine.
  * idle → recording → recorded → playingUser | playingModel
- * permission_denied is sticky across reset; retake discards URI.
+ * permission_denied is sticky across reset; start_failed returns to idle (retryable).
+ * Retake discards URI.
  */
 export function reduceRecording(
   prev: RecordingSnapshot,
@@ -41,6 +44,9 @@ export function reduceRecording(
   switch (event.type) {
     case 'permission_denied':
       return { state: 'permissionDenied', uri: null };
+
+    case 'start_failed':
+      return { state: 'idle', uri: null };
 
     case 'recording_started':
       return { state: 'recording', uri: null };
