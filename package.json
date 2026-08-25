@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "gen:audio": "node scripts/generateAudioMap.js",
-    "test": "tsx --test lib/__tests__/buildSpeakingExercises.test.ts",
+    "test": "tsx --test lib/__tests__/buildSpeakingExercises.test.ts hooks/__tests__/recordingState.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

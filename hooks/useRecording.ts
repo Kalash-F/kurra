@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Audio } from 'expo-av';
+import {
+  INITIAL_RECORDING_SNAPSHOT,
+  reduceRecording,
+  type RecordingSnapshot,
+  type RecordingUiState,
+} from './recordingState';
 
-export type RecordingUiState =
-  | 'idle'
-  | 'recording'
-  | 'recorded'
-  | 'playingUser'
-  | 'playingModel'
-  | 'permissionDenied';
+export type { RecordingUiState } from './recordingState';
 
 export interface UseRecordingResult {
   state: RecordingUiState;
@@ -28,12 +28,20 @@ export interface UseRecordingResult {
  * Mic denial sets permissionDenied and never throws.
  */
 export function useRecording(): UseRecordingResult {
-  const [state, setState] = useState<RecordingUiState>('idle');
-  const [uri, setUri] = useState<string | null>(null);
+  const [snapshot, setSnapshot] = useState<RecordingSnapshot>(INITIAL_RECORDING_SNAPSHOT);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const mountedRef = useRef(true);
+  const uriRef = useRef<string | null>(null);
+
+  const apply = useCallback((event: Parameters<typeof reduceRecording>[1]) => {
+    setSnapshot((prev) => {
+      const next = reduceRecording(prev, event);
+      uriRef.current = next.uri;
+      return next;
+    });
+  }, []);
 
   const unloadSound = useCallback(async () => {
     if (soundRef.current) {
@@ -76,22 +84,24 @@ export function useRecording(): UseRecordingResult {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      cleanup();
+      void cleanup().then(() => {
+        // Mirror unmount stop: discard URI / leave recording
+        uriRef.current = null;
+      });
     };
   }, [cleanup]);
 
   const reset = useCallback(async () => {
     await cleanup();
     if (!mountedRef.current) return;
-    setUri(null);
-    setState((prev) => (prev === 'permissionDenied' ? 'permissionDenied' : 'idle'));
-  }, [cleanup]);
+    apply({ type: 'reset' });
+  }, [apply, cleanup]);
 
   const startRecording = useCallback(async () => {
     try {
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
-        if (mountedRef.current) setState('permissionDenied');
+        if (mountedRef.current) apply({ type: 'permission_denied' });
         return;
       }
 
@@ -110,14 +120,11 @@ export function useRecording(): UseRecordingResult {
       await recording.startAsync();
       recordingRef.current = recording;
 
-      if (mountedRef.current) {
-        setUri(null);
-        setState('recording');
-      }
+      if (mountedRef.current) apply({ type: 'recording_started' });
     } catch {
-      if (mountedRef.current) setState('permissionDenied');
+      if (mountedRef.current) apply({ type: 'permission_denied' });
     }
-  }, [unloadRecording, unloadSound]);
+  }, [apply, unloadRecording, unloadSound]);
 
   const stopRecording = useCallback(async () => {
     const recording = recordingRef.current;
@@ -135,17 +142,15 @@ export function useRecording(): UseRecordingResult {
         shouldDuckAndroid: false,
       });
 
-      if (mountedRef.current) {
-        setUri(nextUri);
-        setState(nextUri ? 'recorded' : 'idle');
-      }
+      if (mountedRef.current) apply({ type: 'recording_stopped', uri: nextUri });
     } catch {
       recordingRef.current = null;
-      if (mountedRef.current) setState('idle');
+      if (mountedRef.current) apply({ type: 'recording_stopped', uri: null });
     }
-  }, []);
+  }, [apply]);
 
   const playUser = useCallback(async () => {
+    const uri = uriRef.current;
     if (!uri) return;
     await unloadSound();
 
@@ -159,46 +164,42 @@ export function useRecording(): UseRecordingResult {
 
       const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
       soundRef.current = sound;
-      if (mountedRef.current) setState('playingUser');
+      if (mountedRef.current) apply({ type: 'play_user' });
 
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && status.didJustFinish) {
           sound.unloadAsync().catch(() => {});
           if (soundRef.current === sound) soundRef.current = null;
-          if (mountedRef.current) setState('recorded');
+          if (mountedRef.current) apply({ type: 'playback_finished' });
         }
       });
     } catch {
-      if (mountedRef.current) setState('recorded');
+      if (mountedRef.current) apply({ type: 'playback_finished' });
     }
-  }, [uri, unloadSound]);
+  }, [apply, unloadSound]);
 
   const playModel = useCallback(
     async (playModelAudio: () => Promise<void> | void) => {
       await unloadSound();
-      if (mountedRef.current) setState('playingModel');
+      if (mountedRef.current) apply({ type: 'play_model' });
       try {
         await playModelAudio();
       } finally {
-        // Model playback may be fire-and-forget TTS; return to recorded promptly.
-        if (mountedRef.current) setState(uri ? 'recorded' : 'idle');
+        if (mountedRef.current) apply({ type: 'playback_finished' });
       }
     },
-    [uri, unloadSound]
+    [apply, unloadSound]
   );
 
   const retake = useCallback(async () => {
     await cleanup();
-    if (mountedRef.current) {
-      setUri(null);
-      setState('idle');
-    }
+    if (mountedRef.current) apply({ type: 'retake_cleared' });
     await startRecording();
-  }, [cleanup, startRecording]);
+  }, [apply, cleanup, startRecording]);
 
   return {
-    state,
-    uri,
+    state: snapshot.state,
+    uri: snapshot.uri,
     startRecording,
     stopRecording,
     playUser,

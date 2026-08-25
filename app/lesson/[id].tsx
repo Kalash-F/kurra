@@ -183,6 +183,7 @@ function ProduceCard({
   const { colors } = useTheme();
   const { speak } = useSpeech();
   const showAnswer = revealed || !!recording.uri || recording.state === 'permissionDenied';
+  const audioOnlyCue = !!cueWithAudio;
 
   useEffect(() => {
     if (cueWithAudio) {
@@ -197,11 +198,19 @@ function ProduceCard({
         {label || 'SAY IT IN NEPALI'}
       </Text>
       <View style={styles.centerContent}>
-        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xl }]}>
-          "{phrase.english}"
-        </Text>
+        {audioOnlyCue && !showAnswer ? (
+          <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xl }]}>
+            Listen, then say what you heard
+          </Text>
+        ) : (
+          <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xl }]}>
+            "{phrase.english}"
+          </Text>
+        )}
         <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg }]}>
-          Produce the Nepali phrase, then check yourself
+          {audioOnlyCue && !showAnswer
+            ? 'Audio-only cue — produce the phrase, then reveal to confirm'
+            : 'Produce the Nepali phrase, then check yourself'}
         </Text>
 
         <SpeakCompare
