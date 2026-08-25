@@ -12,224 +12,20 @@ import { useTheme } from '@/context/ThemeContext';
 import { useUser } from '@/context/UserContext';
 import { useProgress } from '@/context/ProgressContext';
 import { useSpeech } from '@/hooks/useSpeech';
-import { useFeedback } from '@/hooks/useFeedback';
+import { useRecording } from '@/hooks/useRecording';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { SpeakCompare } from '@/components/ui/SpeakCompare';
 import { speakingUnits, Phrase } from '@/data/speakingUnits';
+import {
+  buildSpeakingExercises,
+  buildRequeueExercises,
+  isProduceStyle,
+  SpeakingExercise,
+  SpeakingExerciseType,
+} from '@/lib/buildSpeakingExercises';
 import { Spacing, BorderRadius, Typography } from '@/constants/Typography';
-
-/* ────────────────────────── types ────────────────────────── */
-
-type ExerciseType =
-  | 'intro'
-  | 'listen'
-  | 'guidedRecall'
-  | 'recall'
-  | 'reverseRecall'
-  | 'audioMatch'
-  | 'microReview'
-  | 'recap';
-
-interface Exercise {
-  type: ExerciseType;
-  phrase: Phrase;
-  options?: string[];
-  correctAnswer?: string;
-}
-
-/** Props shared by every quiz-style card — state lives in the PARENT */
-interface QuizState {
-  selected: string | null;
-  showResult: boolean;
-  onSelect: (option: string) => void;
-  onNext: () => void;
-}
-
-/* ────────────────────── helpers ─────────────────────── */
-
-function shuffleOptions(correct: string, pool: string[]): string[] {
-  const others = pool
-    .filter((p) => p !== correct)
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 3);
-  return [correct, ...others].sort(() => Math.random() - 0.5);
-}
-
-/* ────────── multi-stage progressive exercise builder ─────── */
-
-function buildExercises(phrases: Phrase[]): Exercise[] {
-  const exercises: Exercise[] = [];
-  const batchSize = 2;
-  const batches: Phrase[][] = [];
-
-  for (let i = 0; i < phrases.length; i += batchSize) {
-    batches.push(phrases.slice(i, i + batchSize));
-  }
-
-  const allRomanized = phrases.map((p) => p.romanized);
-  const allEnglish = phrases.map((p) => p.english);
-  const introduced: Phrase[] = [];
-
-  batches.forEach((batch, batchIdx) => {
-    // ── STAGE 1: INTRODUCE ──
-    batch.forEach((phrase) => {
-      exercises.push({ type: 'intro', phrase });
-      exercises.push({ type: 'listen', phrase });
-    });
-
-    // ── STAGE 2: GUIDED RECALL ──
-    batch.forEach((phrase) => {
-      exercises.push({
-        type: 'guidedRecall',
-        phrase,
-        options: shuffleOptions(phrase.romanized, allRomanized),
-        correctAnswer: phrase.romanized,
-      });
-    });
-
-    introduced.push(...batch);
-
-    // ── STAGE 3: PRACTICE ──
-    batch.forEach((phrase) => {
-      exercises.push({
-        type: 'recall',
-        phrase,
-        options: shuffleOptions(phrase.romanized, allRomanized),
-        correctAnswer: phrase.romanized,
-      });
-    });
-
-    exercises.push({
-      type: 'reverseRecall',
-      phrase: batch[0],
-      options: shuffleOptions(batch[0].english, allEnglish),
-      correctAnswer: batch[0].english,
-    });
-
-    if (batch.length > 1) {
-      exercises.push({
-        type: 'audioMatch',
-        phrase: batch[1],
-        options: shuffleOptions(batch[1].english, allEnglish),
-        correctAnswer: batch[1].english,
-      });
-    }
-
-    // ── STAGE 4: MICRO-REVIEW ──
-    if (batchIdx > 0) {
-      const previous = introduced.slice(0, -batch.length);
-      const pick = previous[Math.floor(Math.random() * previous.length)];
-      exercises.push({
-        type: 'microReview',
-        phrase: pick,
-        options: shuffleOptions(pick.romanized, allRomanized),
-        correctAnswer: pick.romanized,
-      });
-    }
-  });
-
-  // ── CHALLENGE ROUND ──
-  const challenge = [...phrases].sort(() => Math.random() - 0.5).slice(0, Math.min(6, phrases.length));
-  challenge.forEach((phrase, idx) => {
-    if (idx % 3 === 0) {
-      exercises.push({ type: 'recall', phrase, options: shuffleOptions(phrase.romanized, allRomanized), correctAnswer: phrase.romanized });
-    } else if (idx % 3 === 1) {
-      exercises.push({ type: 'reverseRecall', phrase, options: shuffleOptions(phrase.english, allEnglish), correctAnswer: phrase.english });
-    } else {
-      exercises.push({ type: 'audioMatch', phrase, options: shuffleOptions(phrase.english, allEnglish), correctAnswer: phrase.english });
-    }
-  });
-
-  exercises.push({ type: 'recap', phrase: phrases[0] });
-  return exercises;
-}
-
-/* ═══════════════════════ CARD COMPONENTS ═══════════════════════
- *
- *  IMPORTANT: Quiz cards receive selected / showResult / onSelect
- *  from the PARENT. They have ZERO internal quiz state.
- *  This makes cross-exercise state leaks impossible.
- *
- * ═══════════════════════════════════════════════════════════════ */
-
-/* ──────────── Option list (shared renderer) ──────────── */
-
-function OptionList({
-  options,
-  correctAnswer,
-  selected,
-  showResult,
-  onSelect,
-}: {
-  options: string[];
-  correctAnswer: string;
-  selected: string | null;
-  showResult: boolean;
-  onSelect: (opt: string) => void;
-}) {
-  const { colors } = useTheme();
-
-  return (
-    <View style={styles.optionsList}>
-      {options.map((option, idx) => {
-        const isSelected = selected === option;
-        const isCorrect = option === correctAnswer;
-        let bg = colors.surface;
-        let border = colors.border;
-
-        if (showResult) {
-          if (isCorrect) { bg = colors.correctBg; border = colors.correctBorder; }
-          else if (isSelected && !isCorrect) { bg = colors.incorrectBg; border = colors.incorrectBorder; }
-        }
-
-        return (
-          <TouchableOpacity
-            key={idx}
-            style={[styles.optionBtn, { backgroundColor: bg, borderColor: border }]}
-            onPress={() => onSelect(option)}
-            activeOpacity={0.7}
-            disabled={showResult}
-          >
-            <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
-            {showResult && isCorrect && <Text style={styles.optionMark}>✓</Text>}
-            {showResult && isSelected && !isCorrect && (
-              <Text style={[styles.optionMark, { color: colors.error }]}>✗</Text>
-            )}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-/* ──────────── Result + Continue (shared renderer) ──────────── */
-
-function ResultFooter({
-  selected,
-  correctAnswer,
-  onNext,
-  successText,
-}: {
-  selected: string | null;
-  correctAnswer: string;
-  onNext: () => void;
-  successText?: string;
-}) {
-  const { colors } = useTheme();
-  const isCorrect = selected === correctAnswer;
-
-  return (
-    <View style={styles.bottomButton}>
-      <View style={styles.resultFeedback}>
-        <Text style={[Typography.bodyBold, { color: isCorrect ? colors.success : colors.error }]}>
-          {isCorrect ? (successText || '🎉 Correct!') : `The answer was: ${correctAnswer}`}
-        </Text>
-      </View>
-      <Button title="Continue" onPress={onNext} size="large" fullWidth />
-    </View>
-  );
-}
 
 /* ──────────── Intro Card ──────────── */
 
@@ -298,21 +94,25 @@ function IntroCard({
   );
 }
 
-/* ──────────── Listen Card (hasListened comes from parent) ──────────── */
+/* ──────────── Listen & Repeat Card ──────────── */
 
-function ListenCard({
+function ListenRepeatCard({
   phrase,
-  hasListened,
-  onListen,
+  recording,
+  hasRecorded,
+  onRevealFallback,
   onNext,
 }: {
   phrase: Phrase;
-  hasListened: boolean;
-  onListen: () => void;
+  recording: ReturnType<typeof useRecording>;
+  hasRecorded: boolean;
+  onRevealFallback: () => void;
   onNext: () => void;
 }) {
   const { colors } = useTheme();
   const { speak } = useSpeech();
+  const micDenied = recording.state === 'permissionDenied';
+  const canContinue = hasRecorded || micDenied;
 
   return (
     <View style={styles.exerciseContainer}>
@@ -320,25 +120,37 @@ function ListenCard({
         LISTEN & REPEAT
       </Text>
       <View style={styles.centerContent}>
-        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xxxl }]}>
+        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xxl }]}>
           {phrase.english}
         </Text>
         <TouchableOpacity
           style={[styles.bigAudioBtn, { backgroundColor: colors.primary }]}
-          onPress={() => { speak(phrase.devanagari, { audioFile: phrase.audioFile }); onListen(); }}
+          onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })}
           activeOpacity={0.7}
         >
           <Text style={{ fontSize: 40 }}>🔊</Text>
         </TouchableOpacity>
         <Text style={[Typography.caption, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.lg }]}>
-          Tap to listen, then repeat aloud
+          Listen to the model, then record yourself
         </Text>
+
+        <SpeakCompare
+          state={recording.state}
+          onStartRecording={recording.startRecording}
+          onStopRecording={recording.stopRecording}
+          onPlayUser={recording.playUser}
+          onPlayModel={() =>
+            recording.playModel(() => speak(phrase.devanagari, { audioFile: phrase.audioFile }))
+          }
+          onRetake={recording.retake}
+          onRevealFallback={onRevealFallback}
+        />
       </View>
       <View style={styles.bottomButton}>
         <Button
-          title={hasListened ? "I've Repeated It" : 'Listen First'}
+          title={canContinue ? 'Continue' : 'Record once to continue'}
           onPress={onNext}
-          disabled={!hasListened}
+          disabled={!canContinue}
           size="large"
           fullWidth
         />
@@ -347,170 +159,103 @@ function ListenCard({
   );
 }
 
-/* ──────────── Guided Recall Card ──────────── */
+/* ──────────── Produce Card (English → speak + self-grade) ──────────── */
 
-function GuidedRecallCard({
+function ProduceCard({
   phrase,
-  options,
-  correctAnswer,
-  selected,
-  showResult,
-  onSelect,
-  onNext,
+  label,
+  cueWithAudio,
+  recording,
+  revealed,
+  onReveal,
+  onGotIt,
+  onAgain,
 }: {
   phrase: Phrase;
-  options: string[];
-  correctAnswer: string;
-  showScript: boolean;
-} & QuizState) {
+  label?: string;
+  cueWithAudio?: boolean;
+  recording: ReturnType<typeof useRecording>;
+  revealed: boolean;
+  onReveal: () => void;
+  onGotIt: () => void;
+  onAgain: () => void;
+}) {
   const { colors } = useTheme();
   const { speak } = useSpeech();
-  const [showHint, setShowHint] = useState(false);
+  const showAnswer = revealed || !!recording.uri || recording.state === 'permissionDenied';
 
   useEffect(() => {
-    setShowHint(false);
+    if (cueWithAudio) {
+      speak(phrase.devanagari, { audioFile: phrase.audioFile });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phrase.id]);
 
   return (
     <View style={styles.exerciseContainer}>
-      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.md }]}>
-        GUIDED PRACTICE
+      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.xxl }]}>
+        {label || 'SAY IT IN NEPALI'}
       </Text>
       <View style={styles.centerContent}>
-        {!showHint ? (
-          <TouchableOpacity
-            style={{ marginBottom: Spacing.xxl, width: '100%', alignItems: 'center', padding: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: colors.surface }}
-            onPress={() => setShowHint(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={[Typography.bodyBold, { color: colors.primary }]}>💡 Show Hint</Text>
-          </TouchableOpacity>
-        ) : (
-          <Card variant="outlined" padding="medium" style={{ marginBottom: Spacing.xxl, width: '100%' }}>
-            <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.sm }]}>Remember this phrase:</Text>
-            <Text style={[Typography.h4, { color: colors.text, textAlign: 'center' }]}>{phrase.english}</Text>
-            <TouchableOpacity onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })} style={{ alignSelf: 'center', marginTop: Spacing.sm }}>
-              <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center' }]}>{phrase.romanized} 🔊</Text>
+        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xl }]}>
+          "{phrase.english}"
+        </Text>
+        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg }]}>
+          Produce the Nepali phrase, then check yourself
+        </Text>
+
+        <SpeakCompare
+          state={recording.state}
+          onStartRecording={recording.startRecording}
+          onStopRecording={recording.stopRecording}
+          onPlayUser={recording.playUser}
+          onPlayModel={() =>
+            recording.playModel(() => speak(phrase.devanagari, { audioFile: phrase.audioFile }))
+          }
+          onRetake={recording.retake}
+          onRevealFallback={onReveal}
+        />
+
+        {!showAnswer && recording.state !== 'permissionDenied' && (
+          <Button
+            title="Reveal answer"
+            onPress={onReveal}
+            variant="ghost"
+            size="small"
+            style={{ marginTop: Spacing.md }}
+          />
+        )}
+
+        {showAnswer && (
+          <Card variant="outlined" padding="medium" style={{ marginTop: Spacing.xl, width: '100%' }}>
+            <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center' }]}>
+              {phrase.romanized}
+            </Text>
+            <Text style={[Typography.caption, { color: colors.textTertiary, textAlign: 'center', fontStyle: 'italic', marginTop: Spacing.xs }]}>
+              {phrase.phonetic}
+            </Text>
+            <TouchableOpacity
+              style={[styles.audioButton, { backgroundColor: colors.primary + '15', marginTop: Spacing.md }]}
+              onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 20 }}>🔊</Text>
+              <Text style={[Typography.captionBold, { color: colors.primary, marginLeft: Spacing.sm }]}>
+                Model audio
+              </Text>
             </TouchableOpacity>
           </Card>
         )}
-
-        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.lg }]}>
-          Now pick the correct phrase for "{phrase.english}"
-        </Text>
-
-        <OptionList options={options} correctAnswer={correctAnswer} selected={selected} showResult={showResult} onSelect={onSelect} />
       </View>
 
-      {showResult && <ResultFooter selected={selected} correctAnswer={correctAnswer} onNext={onNext} successText="🎉 Great start!" />}
-    </View>
-  );
-}
-
-/* ──────────── Recall Card (English → Nepali) ──────────── */
-
-function RecallCard({
-  phrase,
-  options,
-  correctAnswer,
-  label,
-  selected,
-  showResult,
-  onSelect,
-  onNext,
-}: {
-  phrase: Phrase;
-  options: string[];
-  correctAnswer: string;
-  label?: string;
-} & QuizState) {
-  const { colors } = useTheme();
-
-  return (
-    <View style={styles.exerciseContainer}>
-      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.xxl }]}>
-        {label || 'RECALL'}
-      </Text>
-      <View style={styles.centerContent}>
-        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.xxxl }]}>"{phrase.english}"</Text>
-        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.xxl }]}>Choose the correct Nepali phrase</Text>
-        <OptionList options={options} correctAnswer={correctAnswer} selected={selected} showResult={showResult} onSelect={onSelect} />
-      </View>
-      {showResult && <ResultFooter selected={selected} correctAnswer={correctAnswer} onNext={onNext} />}
-    </View>
-  );
-}
-
-/* ──────────── Reverse Recall Card (Nepali → English) ──────────── */
-
-function ReverseRecallCard({
-  phrase,
-  options,
-  correctAnswer,
-  selected,
-  showResult,
-  onSelect,
-  onNext,
-}: {
-  phrase: Phrase;
-  options: string[];
-  correctAnswer: string;
-} & QuizState) {
-  const { colors } = useTheme();
-  const { speak } = useSpeech();
-
-  return (
-    <View style={styles.exerciseContainer}>
-      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.xxl }]}>WHAT DOES THIS MEAN?</Text>
-      <View style={styles.centerContent}>
-        <TouchableOpacity onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })} style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
-          <Text style={[Typography.devanagariSmall, { color: colors.devanagari, textAlign: 'center' }]}>{phrase.devanagari}</Text>
-          <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center', marginTop: Spacing.xs }]}>{phrase.romanized}</Text>
-          <Text style={[Typography.caption, { color: colors.primary, marginTop: Spacing.sm }]}>🔊 Tap to hear</Text>
-        </TouchableOpacity>
-        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.xl }]}>Choose the English meaning</Text>
-        <OptionList options={options} correctAnswer={correctAnswer} selected={selected} showResult={showResult} onSelect={onSelect} />
-      </View>
-      {showResult && <ResultFooter selected={selected} correctAnswer={correctAnswer} onNext={onNext} />}
-    </View>
-  );
-}
-
-/* ──────────── Audio Match Card ──────────── */
-
-function AudioMatchCard({
-  phrase,
-  options,
-  correctAnswer,
-  selected,
-  showResult,
-  onSelect,
-  onNext,
-}: {
-  phrase: Phrase;
-  options: string[];
-  correctAnswer: string;
-} & QuizState) {
-  const { colors } = useTheme();
-  const { speak } = useSpeech();
-
-  return (
-    <View style={styles.exerciseContainer}>
-      <Text style={[Typography.label, { color: colors.textTertiary, textAlign: 'center', marginBottom: Spacing.xxl }]}>AUDIO MATCH</Text>
-      <View style={styles.centerContent}>
-        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginBottom: Spacing.xl }]}>Listen and choose the meaning</Text>
-        <TouchableOpacity
-          style={[styles.bigAudioBtn, { backgroundColor: colors.secondary }]}
-          onPress={() => speak(phrase.devanagari, { audioFile: phrase.audioFile })}
-          activeOpacity={0.7}
-        >
-          <Text style={{ fontSize: 40 }}>🔊</Text>
-        </TouchableOpacity>
-        <View style={{ marginTop: Spacing.xxxl, width: '100%' }}>
-          <OptionList options={options} correctAnswer={correctAnswer} selected={selected} showResult={showResult} onSelect={onSelect} />
+      {showAnswer && (
+        <View style={styles.bottomButton}>
+          <View style={styles.selfGradeRow}>
+            <Button title="Again" onPress={onAgain} variant="outline" size="large" style={{ flex: 1 }} />
+            <Button title="Got it" onPress={onGotIt} size="large" style={{ flex: 1 }} />
+          </View>
         </View>
-      </View>
-      {showResult && <ResultFooter selected={selected} correctAnswer={correctAnswer} onNext={onNext} />}
+      )}
     </View>
   );
 }
@@ -540,12 +285,26 @@ function RecapCard({
         <Text style={{ fontSize: 64, textAlign: 'center', marginBottom: Spacing.xxl }}>
           {pct >= 80 ? '🎉' : pct >= 50 ? '👍' : '💪'}
         </Text>
-        <Text style={[Typography.h2, { color: colors.text, textAlign: 'center', marginBottom: Spacing.md }]}>Lesson Complete!</Text>
+        <Text style={[Typography.h2, { color: colors.text, textAlign: 'center', marginBottom: Spacing.md }]}>
+          Lesson Complete!
+        </Text>
         <Text style={[Typography.h1, { color: colors.primary, textAlign: 'center' }]}>{pct}%</Text>
-        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>{score} of {total} correct</Text>
+        <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm }]}>
+          {score} of {total} self-checked
+        </Text>
 
         {missedCount > 0 && (
-          <View style={[styles.noteBox, { backgroundColor: colors.warningLight, borderColor: colors.warning + '40', marginTop: Spacing.lg, alignSelf: 'stretch' }]}>
+          <View
+            style={[
+              styles.noteBox,
+              {
+                backgroundColor: colors.warningLight,
+                borderColor: colors.warning + '40',
+                marginTop: Spacing.lg,
+                alignSelf: 'stretch',
+              },
+            ]}
+          >
             <Text style={[Typography.caption, { color: colors.text, textAlign: 'center' }]}>
               💪 You retried {missedCount} phrase{missedCount > 1 ? 's' : ''} — great persistence!
             </Text>
@@ -553,7 +312,9 @@ function RecapCard({
         )}
 
         <View style={[styles.recapList, { backgroundColor: colors.surfaceElevated, borderRadius: BorderRadius.lg }]}>
-          <Text style={[Typography.captionBold, { color: colors.textSecondary, marginBottom: Spacing.md }]}>PHRASES PRACTICED</Text>
+          <Text style={[Typography.captionBold, { color: colors.textSecondary, marginBottom: Spacing.md }]}>
+            PHRASES PRACTICED
+          </Text>
           {phrases.slice(0, 6).map((phrase) => (
             <TouchableOpacity
               key={phrase.id}
@@ -564,7 +325,9 @@ function RecapCard({
               <View style={{ flex: 1 }}>
                 <Text style={[Typography.caption, { color: colors.text }]}>{phrase.english}</Text>
                 <Text style={[Typography.small, { color: colors.romanized }]}>{phrase.romanized}</Text>
-                <Text style={[Typography.small, { color: colors.textTertiary, fontStyle: 'italic' }]}>{phrase.phonetic}</Text>
+                <Text style={[Typography.small, { color: colors.textTertiary, fontStyle: 'italic' }]}>
+                  {phrase.phonetic}
+                </Text>
               </View>
               <Text style={{ fontSize: 16 }}>🔊</Text>
             </TouchableOpacity>
@@ -578,6 +341,12 @@ function RecapCard({
   );
 }
 
+function produceLabel(type: SpeakingExerciseType): string {
+  if (type === 'microReview') return '⚡ QUICK REVIEW';
+  if (type === 'listenProduce') return 'HEAR & PRODUCE';
+  return 'SAY IT IN NEPALI';
+}
+
 /* ═══════════════════════ MAIN LESSON SCREEN ═══════════════════════ */
 
 export default function LessonScreen() {
@@ -585,110 +354,101 @@ export default function LessonScreen() {
   const { colors } = useTheme();
   const { profile } = useUser();
   const { progress, completeSpeakingLesson, updateItemMastery, updateStreak } = useProgress();
-  const { correctFeedback, incorrectFeedback } = useFeedback();
+  const recording = useRecording();
 
   const unit = speakingUnits.find((u) => u.id === id);
-  if (!unit) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
-        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginTop: 100 }]}>Lesson not found</Text>
-      </SafeAreaView>
-    );
-  }
-
   const showScript = profile.path === 'speaking_script';
-  const lessonProgress = progress.speakingLessons[unit.id];
+  const lessonProgress = unit ? progress.speakingLessons[unit.id] : undefined;
   const completedIds = lessonProgress?.completedItems || [];
   const sessionPhrasesRef = useRef<Phrase[]>([]);
 
   const initialExercises = useMemo(() => {
-    const uncompletedPhrases = unit.phrases.filter(p => !completedIds.includes(p.id));
-    const sessionPhrases = uncompletedPhrases.length > 0 ? uncompletedPhrases.slice(0, 3) : [...unit.phrases].sort(() => Math.random() - 0.5).slice(0, 3);
+    if (!unit) return [] as SpeakingExercise[];
+    const uncompletedPhrases = unit.phrases.filter((p) => !completedIds.includes(p.id));
+    const sessionPhrases =
+      uncompletedPhrases.length > 0
+        ? uncompletedPhrases.slice(0, 3)
+        : [...unit.phrases].sort(() => Math.random() - 0.5).slice(0, 3);
     sessionPhrasesRef.current = sessionPhrases;
 
-    let exs = buildExercises(sessionPhrases);
+    let exs = buildSpeakingExercises(sessionPhrases);
 
-    const completedPhrasesData = unit.phrases.filter(p => completedIds.includes(p.id));
+    const completedPhrasesData = unit.phrases.filter((p) => completedIds.includes(p.id));
     if (completedPhrasesData.length > 0 && uncompletedPhrases.length > 0) {
       const shuffled = [...completedPhrasesData].sort(() => Math.random() - 0.5).slice(0, 2);
-      const allRomanized = unit.phrases.map((p) => p.romanized);
-      const prepends = shuffled.map(phrase => ({
-        type: 'microReview' as ExerciseType,
+      const prepends: SpeakingExercise[] = shuffled.map((phrase) => ({
+        type: 'microReview' as const,
         phrase,
-        options: shuffleOptions(phrase.romanized, allRomanized),
-        correctAnswer: phrase.romanized,
       }));
       exs = [...prepends, ...exs];
     }
     return exs;
-  }, [unit.id, completedIds.length]);
+  }, [unit?.id, completedIds.length]);
 
-  const [exercises, setExercises] = useState<Exercise[]>(initialExercises);
+  const [exercises, setExercises] = useState<SpeakingExercise[]>(initialExercises);
   const [currentStep, setCurrentStep] = useState(0);
   const [score, setScore] = useState(0);
   const [totalAnswered, setTotalAnswered] = useState(0);
   const missedIds = useRef(new Set<string>());
   const [requeueInserted, setRequeueInserted] = useState(false);
   const [requeueCount, setRequeueCount] = useState(0);
+  const [hasRecorded, setHasRecorded] = useState(false);
+  const [answerRevealed, setAnswerRevealed] = useState(false);
+  const currentPhraseRef = useRef('');
 
-  /* ── Lifted quiz state: SINGLE source of truth, reset every step ── */
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [resultRevealed, setResultRevealed] = useState(false);
-  const [hasListened, setHasListened] = useState(false);
-
-  // Explicitly reset ALL quiz state whenever the step changes
   useEffect(() => {
-    setSelectedAnswer(null);
-    setResultRevealed(false);
-    setHasListened(false);
+    recording.reset();
+    setHasRecorded(false);
+    setAnswerRevealed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep]);
 
-  const progressPct = ((currentStep + 1) / exercises.length) * 100;
+  useEffect(() => {
+    if (
+      recording.uri ||
+      recording.state === 'recorded' ||
+      recording.state === 'playingUser' ||
+      recording.state === 'playingModel'
+    ) {
+      setHasRecorded(true);
+    }
+  }, [recording.uri, recording.state]);
+
+  if (!unit) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
+        <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginTop: 100 }]}>
+          Lesson not found
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  const progressPct = ((currentStep + 1) / Math.max(exercises.length, 1)) * 100;
   const current = exercises[currentStep];
-  const currentPhraseRef = useRef(current.phrase.id);
-  currentPhraseRef.current = current.phrase.id;
+  if (current) currentPhraseRef.current = current.phrase.id;
 
-  const handleSelect = (option: string) => {
-    if (resultRevealed) return; // prevent double-tap
-    setSelectedAnswer(option);
-    setResultRevealed(true);
-
-    const isCorrect = option === current.correctAnswer;
-    isCorrect ? correctFeedback() : incorrectFeedback();
-
+  const advanceAfterGrade = (gotIt: boolean) => {
     const phraseId = currentPhraseRef.current;
     setTotalAnswered((t) => t + 1);
-    if (isCorrect) {
+    if (gotIt) {
       setScore((s) => s + 1);
       missedIds.current.delete(phraseId);
     } else {
       missedIds.current.add(phraseId);
     }
-    updateItemMastery(phraseId, isCorrect);
+    updateItemMastery(phraseId, gotIt);
+    handleNext();
   };
 
   const handleNext = () => {
     const next = currentStep + 1;
     if (next >= exercises.length) return;
 
-    if (
-      exercises[next].type === 'recap' &&
-      missedIds.current.size > 0 &&
-      !requeueInserted
-    ) {
+    if (exercises[next].type === 'recap' && missedIds.current.size > 0 && !requeueInserted) {
       const missed = unit.phrases.filter((p) => missedIds.current.has(p.id));
-      const allRomanized = unit.phrases.map((p) => p.romanized);
-      const requeueExs: Exercise[] = missed.map((phrase) => ({
-        type: 'recall' as ExerciseType,
-        phrase,
-        options: shuffleOptions(phrase.romanized, allRomanized),
-        correctAnswer: phrase.romanized,
-      }));
-      setExercises((prev) => [
-        ...prev.slice(0, next),
-        ...requeueExs,
-        prev[prev.length - 1],
-      ]);
+      const requeueExs = buildRequeueExercises(missed);
+      setExercises((prev) => [...prev.slice(0, next), ...requeueExs, prev[prev.length - 1]]);
       setRequeueInserted(true);
       setRequeueCount(missed.length);
     }
@@ -697,18 +457,11 @@ export default function LessonScreen() {
   };
 
   const handleFinish = async () => {
-    const newlyCompletedIds = sessionPhrasesRef.current.map(p => p.id);
+    const newlyCompletedIds = sessionPhrasesRef.current.map((p) => p.id);
     const isComplete = completedIds.length + sessionPhrasesRef.current.length >= unit.phrases.length;
     await completeSpeakingLesson(unit.id, newlyCompletedIds, isComplete);
     await updateStreak();
     router.back();
-  };
-
-  const quizProps: QuizState = {
-    selected: selectedAnswer,
-    showResult: resultRevealed,
-    onSelect: handleSelect,
-    onNext: handleNext,
   };
 
   return (
@@ -726,29 +479,43 @@ export default function LessonScreen() {
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
-        {current.type === 'intro' && (
-          <IntroCard phrase={current.phrase} showScript={showScript} showRomanized={profile.showRomanized} onNext={handleNext} />
+        {current?.type === 'intro' && (
+          <IntroCard
+            phrase={current.phrase}
+            showScript={showScript}
+            showRomanized={profile.showRomanized}
+            onNext={handleNext}
+          />
         )}
-        {current.type === 'listen' && (
-          <ListenCard phrase={current.phrase} hasListened={hasListened} onListen={() => setHasListened(true)} onNext={handleNext} />
+        {current?.type === 'listenRepeat' && (
+          <ListenRepeatCard
+            phrase={current.phrase}
+            recording={recording}
+            hasRecorded={hasRecorded}
+            onRevealFallback={() => setHasRecorded(true)}
+            onNext={handleNext}
+          />
         )}
-        {current.type === 'guidedRecall' && current.options && current.correctAnswer && (
-          <GuidedRecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} showScript={showScript} {...quizProps} />
+        {current && isProduceStyle(current.type) && (
+          <ProduceCard
+            phrase={current.phrase}
+            label={produceLabel(current.type)}
+            cueWithAudio={current.type === 'listenProduce'}
+            recording={recording}
+            revealed={answerRevealed}
+            onReveal={() => setAnswerRevealed(true)}
+            onGotIt={() => advanceAfterGrade(true)}
+            onAgain={() => advanceAfterGrade(false)}
+          />
         )}
-        {current.type === 'recall' && current.options && current.correctAnswer && (
-          <RecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
-        )}
-        {current.type === 'reverseRecall' && current.options && current.correctAnswer && (
-          <ReverseRecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
-        )}
-        {current.type === 'audioMatch' && current.options && current.correctAnswer && (
-          <AudioMatchCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} {...quizProps} />
-        )}
-        {current.type === 'microReview' && current.options && current.correctAnswer && (
-          <RecallCard phrase={current.phrase} options={current.options} correctAnswer={current.correctAnswer} label="⚡ QUICK REVIEW" {...quizProps} />
-        )}
-        {current.type === 'recap' && (
-          <RecapCard phrases={unit.phrases} score={score} total={totalAnswered} missedCount={requeueCount} onFinish={handleFinish} />
+        {current?.type === 'recap' && (
+          <RecapCard
+            phrases={sessionPhrasesRef.current}
+            score={score}
+            total={totalAnswered}
+            missedCount={requeueCount}
+            onFinish={handleFinish}
+          />
         )}
       </ScrollView>
     </SafeAreaView>
@@ -812,17 +579,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  optionsList: { width: '100%', gap: Spacing.sm },
-  optionBtn: {
+  selfGradeRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 2,
+    gap: Spacing.md,
+    width: '100%',
   },
-  optionMark: { fontSize: 18, fontWeight: '700', color: '#4CAF50' },
-  resultFeedback: { alignItems: 'center', marginBottom: Spacing.lg },
   bottomButton: { paddingBottom: Spacing.xxxl, paddingTop: Spacing.lg },
   recapList: { marginTop: Spacing.xxl, padding: Spacing.lg, width: '100%' },
   recapRow: {

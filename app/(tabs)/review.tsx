@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,39 +11,48 @@ import { useTheme } from '@/context/ThemeContext';
 import { useProgress } from '@/context/ProgressContext';
 import { useUser } from '@/context/UserContext';
 import { useSpeech } from '@/hooks/useSpeech';
+import { useRecording } from '@/hooks/useRecording';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { speakingUnits } from '@/data/speakingUnits';
+import { SpeakCompare } from '@/components/ui/SpeakCompare';
+import { speakingUnits, Phrase } from '@/data/speakingUnits';
 import { scriptUnits } from '@/data/scriptUnits';
 import { Spacing, BorderRadius, Typography } from '@/constants/Typography';
 
 interface ReviewItem {
   id: string;
-  type: 'speaking' | 'script';
-  question: string;
-  answer: string;
-  devanagari?: string;
-  options: string[];
+  kind: 'speaking' | 'script';
+  prompt: string;
+  romanized: string;
+  phonetic: string;
+  devanagari: string;
   audioFile?: string;
 }
 
-function buildAllReviewItems(progress: any, showScript: boolean): ReviewItem[] {
+function phraseToReviewItem(phrase: Phrase): ReviewItem {
+  return {
+    id: phrase.id,
+    kind: 'speaking',
+    prompt: phrase.english,
+    romanized: phrase.romanized,
+    phonetic: phrase.phonetic,
+    devanagari: phrase.devanagari,
+    audioFile: phrase.audioFile,
+  };
+}
+
+function buildAllReviewItems(
+  progress: ReturnType<typeof useProgress>['progress'],
+  showScript: boolean
+): ReviewItem[] {
   const items: ReviewItem[] = [];
 
   speakingUnits.forEach((unit) => {
     const lesson = progress.speakingLessons[unit.id];
-    if (lesson?.completed || lesson?.completedItems?.length > 0) {
+    if (lesson?.completed || (lesson?.completedItems?.length ?? 0) > 0) {
       unit.phrases.forEach((phrase) => {
         if (lesson?.completed || lesson?.completedItems?.includes(phrase.id)) {
-          items.push({
-            id: phrase.id,
-            type: 'speaking',
-            question: phrase.english,
-            answer: phrase.romanized,
-            devanagari: phrase.devanagari,
-            options: generateOptions(phrase.romanized, unit.phrases.map(p => p.romanized)),
-            audioFile: phrase.audioFile,
-          });
+          items.push(phraseToReviewItem(phrase));
         }
       });
     }
@@ -52,17 +61,17 @@ function buildAllReviewItems(progress: any, showScript: boolean): ReviewItem[] {
   if (showScript) {
     scriptUnits.forEach((unit) => {
       const lesson = progress.scriptLessons[unit.id];
-      if (lesson?.completed || lesson?.completedItems?.length > 0) {
+      if (lesson?.completed || (lesson?.completedItems?.length ?? 0) > 0) {
         unit.items.forEach((item) => {
           const key = `${unit.id}-${item.transliteration}`;
           if (lesson?.completed || lesson?.completedItems?.includes(key)) {
             items.push({
               id: key,
-              type: 'script',
-              question: item.character,
-              answer: item.transliteration,
+              kind: 'script',
+              prompt: item.character,
+              romanized: item.transliteration,
+              phonetic: item.transliteration,
               devanagari: item.character,
-              options: generateOptions(item.transliteration, unit.items.map(i => i.transliteration)),
               audioFile: item.audioFile,
             });
           }
@@ -74,17 +83,12 @@ function buildAllReviewItems(progress: any, showScript: boolean): ReviewItem[] {
   return items;
 }
 
-function generateOptions(correct: string, pool: string[]): string[] {
-  const others = pool.filter((p) => p !== correct).sort(() => Math.random() - 0.5).slice(0, 3);
-  const options = [correct, ...others].sort(() => Math.random() - 0.5);
-  return options.length >= 2 ? options : [correct, 'option2', 'option3', 'option4'];
-}
-
 export default function ReviewScreen() {
   const { colors } = useTheme();
   const { progress, updateItemMastery, getWeakItems, getReviewDue } = useProgress();
   const { profile } = useUser();
   const { speak } = useSpeech();
+  const recording = useRecording();
   const showScript = profile.path === 'speaking_script';
 
   const weakItems = getWeakItems();
@@ -94,34 +98,38 @@ export default function ReviewScreen() {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [showResult, setShowResult] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   const [score, setScore] = useState(0);
   const [answered, setAnswered] = useState(0);
+
+  useEffect(() => {
+    recording.reset();
+    setRevealed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, isSessionActive]);
 
   const startSession = (mode: 'weak' | 'due' | 'random') => {
     let pool = [...allItems];
     if (mode === 'weak') {
-      pool = pool.filter(i => weakItems.includes(i.id));
+      pool = pool.filter((i) => weakItems.includes(i.id));
     } else if (mode === 'due') {
-      pool = pool.filter(i => dueItems.includes(i.id));
+      pool = pool.filter((i) => dueItems.includes(i.id));
     }
-    
+
     if (pool.length === 0) return;
     pool = pool.sort(() => Math.random() - 0.5).slice(0, 20);
-    
+
     setReviewItems(pool);
     setCurrentIndex(0);
     setScore(0);
     setAnswered(0);
-    setSelectedAnswer(null);
-    setShowResult(false);
+    setRevealed(false);
     setIsSessionActive(true);
   };
 
   if (!isSessionActive) {
-    const weakCount = allItems.filter(i => weakItems.includes(i.id)).length;
-    const dueCount = allItems.filter(i => dueItems.includes(i.id)).length;
+    const weakCount = allItems.filter((i) => weakItems.includes(i.id)).length;
+    const dueCount = allItems.filter((i) => dueItems.includes(i.id)).length;
 
     if (allItems.length === 0) {
       return (
@@ -131,8 +139,14 @@ export default function ReviewScreen() {
             <Text style={[Typography.h3, { color: colors.text, textAlign: 'center', marginBottom: Spacing.md }]}>
               Nothing to review yet
             </Text>
-            <Text style={[Typography.body, { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing.xxxl }]}>
-              Complete some lessons first to build your review deck. Items you've learned will appear here for practice.
+            <Text
+              style={[
+                Typography.body,
+                { color: colors.textSecondary, textAlign: 'center', paddingHorizontal: Spacing.xxxl },
+              ]}
+            >
+              Complete some lessons first to build your review deck. Items you've learned will appear here for
+              practice.
             </Text>
           </View>
         </SafeAreaView>
@@ -143,37 +157,39 @@ export default function ReviewScreen() {
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
         <ScrollView contentContainerStyle={styles.menuContainer}>
           <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.xl }]}>Review Hub</Text>
-          
+
           <Card variant="elevated" padding="large" style={{ marginBottom: Spacing.lg }}>
             <Text style={[Typography.h4, { color: colors.text, marginBottom: Spacing.sm }]}>🎯 Target Weaknesses</Text>
-            <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>Practice items you recently got wrong.</Text>
-            <Button 
-              title={weakCount > 0 ? `Relearn Weak Concepts (${weakCount})` : "No weak concepts yet!"} 
-              onPress={() => startSession('weak')} 
-              disabled={weakCount === 0} 
-              variant="primary" 
+            <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>
+              Practice items you recently got wrong.
+            </Text>
+            <Button
+              title={weakCount > 0 ? `Relearn Weak Concepts (${weakCount})` : 'No weak concepts yet!'}
+              onPress={() => startSession('weak')}
+              disabled={weakCount === 0}
+              variant="primary"
             />
           </Card>
 
           <Card variant="elevated" padding="large" style={{ marginBottom: Spacing.lg }}>
             <Text style={[Typography.h4, { color: colors.text, marginBottom: Spacing.sm }]}>📅 Daily Spaced Review</Text>
-            <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>Review items that are due for a refresher to solidify your memory.</Text>
-            <Button 
-              title={dueCount > 0 ? `Review Due Items (${dueCount})` : "All caught up for today!"} 
-              onPress={() => startSession('due')} 
-              disabled={dueCount === 0} 
-              variant="secondary" 
+            <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>
+              Review items that are due for a refresher to solidify your memory.
+            </Text>
+            <Button
+              title={dueCount > 0 ? `Review Due Items (${dueCount})` : 'All caught up for today!'}
+              onPress={() => startSession('due')}
+              disabled={dueCount === 0}
+              variant="secondary"
             />
           </Card>
 
           <Card variant="elevated" padding="large">
             <Text style={[Typography.h4, { color: colors.text, marginBottom: Spacing.sm }]}>🎲 Random Practice</Text>
-            <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>A general, randomized mix of everything you've learned so far.</Text>
-            <Button 
-              title="Start General Practice" 
-              onPress={() => startSession('random')} 
-              variant="outline" 
-            />
+            <Text style={[Typography.body, { color: colors.textSecondary, marginBottom: Spacing.lg }]}>
+              A general, randomized mix of everything you've learned so far.
+            </Text>
+            <Button title="Start General Practice" onPress={() => startSession('random')} variant="outline" />
           </Card>
         </ScrollView>
       </SafeAreaView>
@@ -181,7 +197,7 @@ export default function ReviewScreen() {
   }
 
   if (currentIndex >= reviewItems.length) {
-    const percentage = Math.round((score / answered) * 100);
+    const percentage = answered > 0 ? Math.round((score / answered) * 100) : 100;
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]}>
         <View style={styles.emptyContainer}>
@@ -191,11 +207,9 @@ export default function ReviewScreen() {
           <Text style={[Typography.h2, { color: colors.text, textAlign: 'center', marginBottom: Spacing.md }]}>
             Review Complete!
           </Text>
-          <Text style={[Typography.h1, { color: colors.primary }]}>
-            {percentage}%
-          </Text>
+          <Text style={[Typography.h1, { color: colors.primary }]}>{percentage}%</Text>
           <Text style={[Typography.body, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
-            {score} of {answered} correct
+            {score} of {answered} self-checked
           </Text>
           <Button
             title="Back to Review Menu"
@@ -209,22 +223,13 @@ export default function ReviewScreen() {
   }
 
   const current = reviewItems[currentIndex];
+  const showAnswer = revealed || !!recording.uri || recording.state === 'permissionDenied';
 
-  const handleSelect = async (option: string) => {
-    if (showResult) return;
-    setSelectedAnswer(option);
-    setShowResult(true);
-    setAnswered(answered + 1);
-
-    const isCorrect = option === current.answer;
-    if (isCorrect) setScore(score + 1);
-    await updateItemMastery(current.id, isCorrect);
-  };
-
-  const handleNext = () => {
-    setSelectedAnswer(null);
-    setShowResult(false);
-    setCurrentIndex(currentIndex + 1);
+  const grade = async (gotIt: boolean) => {
+    setAnswered((a) => a + 1);
+    if (gotIt) setScore((s) => s + 1);
+    await updateItemMastery(current.id, gotIt);
+    setCurrentIndex((i) => i + 1);
   };
 
   return (
@@ -249,77 +254,76 @@ export default function ReviewScreen() {
           />
         </View>
 
-        <View style={styles.questionArea}>
-          <Text style={[Typography.label, { color: colors.textTertiary, marginBottom: Spacing.md }]}>
-            {current.type === 'speaking' ? 'WHAT IS THIS IN NEPALI?' : 'WHAT SOUND IS THIS?'}
+        <ScrollView contentContainerStyle={styles.sessionBody} showsVerticalScrollIndicator={false}>
+          <Text style={[Typography.label, { color: colors.textTertiary, marginBottom: Spacing.md, textAlign: 'center' }]}>
+            {current.kind === 'speaking' ? 'SAY IT IN NEPALI' : 'SAY THIS SOUND'}
           </Text>
 
-          {current.type === 'script' ? (
-            <TouchableOpacity onPress={() => speak(current.devanagari || current.answer, { audioFile: current.audioFile })}>
-              <Text style={[Typography.devanagariLarge, { color: colors.devanagari, textAlign: 'center' }]}>
-                {current.question}
-              </Text>
-              <Text style={[Typography.caption, { color: colors.primary, textAlign: 'center', marginTop: Spacing.sm }]}>
-                🔊 Tap to hear
-              </Text>
-            </TouchableOpacity>
+          {current.kind === 'script' ? (
+            <Text style={[Typography.devanagariLarge, { color: colors.devanagari, textAlign: 'center', marginBottom: Spacing.lg }]}>
+              {current.prompt}
+            </Text>
           ) : (
-            <Text style={[Typography.h2, { color: colors.text, textAlign: 'center' }]}>
-              {current.question}
+            <Text style={[Typography.h2, { color: colors.text, textAlign: 'center', marginBottom: Spacing.lg }]}>
+              {current.prompt}
             </Text>
           )}
-        </View>
 
-        <View style={styles.optionsArea}>
-          {current.options.map((option, idx) => {
-            const isSelected = selectedAnswer === option;
-            const isCorrect = option === current.answer;
-            let bgColor = colors.surface;
-            let borderColor = colors.border;
-
-            if (showResult) {
-              if (isCorrect) {
-                bgColor = colors.correctBg;
-                borderColor = colors.correctBorder;
-              } else if (isSelected && !isCorrect) {
-                bgColor = colors.incorrectBg;
-                borderColor = colors.incorrectBorder;
-              }
-            } else if (isSelected) {
-              bgColor = colors.primary + '15';
-              borderColor = colors.primary;
+          <SpeakCompare
+            state={recording.state}
+            onStartRecording={recording.startRecording}
+            onStopRecording={recording.stopRecording}
+            onPlayUser={recording.playUser}
+            onPlayModel={() =>
+              recording.playModel(() => speak(current.devanagari, { audioFile: current.audioFile }))
             }
+            onRetake={recording.retake}
+            onRevealFallback={() => setRevealed(true)}
+          />
 
-            return (
-              <TouchableOpacity
-                key={idx}
-                style={[styles.option, { backgroundColor: bgColor, borderColor }]}
-                onPress={() => handleSelect(option)}
-                activeOpacity={0.7}
-                disabled={showResult}
-              >
-                <Text style={[Typography.body, { color: colors.text }]}>{option}</Text>
-                {showResult && isCorrect && (
-                  <Text style={{ fontSize: 18, marginLeft: 'auto' }}>✓</Text>
-                )}
-                {showResult && isSelected && !isCorrect && (
-                  <Text style={{ fontSize: 18, marginLeft: 'auto' }}>✗</Text>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+          {!showAnswer && recording.state !== 'permissionDenied' && (
+            <Button
+              title="Reveal answer"
+              onPress={() => setRevealed(true)}
+              variant="ghost"
+              size="small"
+              style={{ marginTop: Spacing.md, alignSelf: 'center' }}
+            />
+          )}
 
-        {showResult && (
-          <View style={styles.resultArea}>
-            {selectedAnswer === current.answer ? (
-              <Text style={[Typography.bodyBold, { color: colors.success }]}>Correct! 🎉</Text>
-            ) : (
-              <Text style={[Typography.body, { color: colors.error }]}>
-                The answer was: {current.answer}
+          {showAnswer && (
+            <Card variant="outlined" padding="medium" style={{ marginTop: Spacing.xl, width: '100%' }}>
+              <Text style={[Typography.romanized, { color: colors.romanized, textAlign: 'center' }]}>
+                {current.romanized}
               </Text>
-            )}
-            <Button title="Next" onPress={handleNext} style={{ marginTop: Spacing.lg }} fullWidth />
+              <Text
+                style={[
+                  Typography.caption,
+                  { color: colors.textTertiary, textAlign: 'center', fontStyle: 'italic', marginTop: Spacing.xs },
+                ]}
+              >
+                {current.phonetic}
+              </Text>
+              <TouchableOpacity
+                style={[styles.audioButton, { backgroundColor: colors.primary + '15' }]}
+                onPress={() => speak(current.devanagari, { audioFile: current.audioFile })}
+                activeOpacity={0.7}
+              >
+                <Text style={{ fontSize: 20 }}>🔊</Text>
+                <Text style={[Typography.captionBold, { color: colors.primary, marginLeft: Spacing.sm }]}>
+                  Model audio
+                </Text>
+              </TouchableOpacity>
+            </Card>
+          )}
+        </ScrollView>
+
+        {showAnswer && (
+          <View style={styles.resultArea}>
+            <View style={styles.selfGradeRow}>
+              <Button title="Again" onPress={() => grade(false)} variant="outline" size="large" style={{ flex: 1 }} />
+              <Button title="Got it" onPress={() => grade(true)} size="large" style={{ flex: 1 }} />
+            </View>
           </View>
         )}
       </View>
@@ -353,29 +357,32 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 4,
     borderRadius: 2,
-    marginBottom: Spacing.xxxl,
+    marginBottom: Spacing.xl,
     overflow: 'hidden',
   },
   progressFill: {
     height: 4,
     borderRadius: 2,
   },
-  questionArea: {
+  sessionBody: {
+    flexGrow: 1,
     alignItems: 'center',
-    paddingVertical: Spacing.xxl,
-    flex: 1,
-    justifyContent: 'center',
+    paddingBottom: Spacing.xl,
   },
-  optionsArea: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.xl,
-  },
-  option: {
+  audioButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 2,
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.full,
+    marginTop: Spacing.md,
+    alignSelf: 'center',
+  },
+  selfGradeRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    width: '100%',
   },
   resultArea: {
     alignItems: 'center',
